@@ -1,0 +1,53 @@
+{
+  "Records": [
+    {
+      "eventVersion": "1.05",
+      "userIdentity": {
+        "type": "AssumedRole",
+        "principalId": "AROAI456UTLCTGZICFKWE:first.last@example.com",
+        "arn": "arn:aws:sts::012345678901:assumed-role/Administrators/first.last@example.com",
+        "accountId": "761885676921",
+        "accessKeyId": "ASIA3CY7M2V43LFQPUVH",
+        "sessionContext": {
+          "sessionIssuer": {
+            "type": "Role",
+            "principalId": "AROAI456UTLCTGZICFKWE",
+            "arn": "arn:aws:iam::012345678901:role/Administrators",
+            "accountId": "012345678901",
+            "userName": "Administrator-SSO"
+          },
+          "webIdFederationData": {},
+          "attributes": {
+            "mfaAuthenticated": "false",
+            "creationDate": "2020-06-17T00:45:14Z"
+          }
+        }
+      },
+      "eventTime": "2020-06-17T00:45:14Z",
+      "eventSource": "health.amazonaws.com",
+      "eventName": "DescribeEventAggregates",
+      "awsRegion": "us-east-1",
+      "sourceIPAddress": "1.1.1.1",
+      "userAgent": "console.amazonaws.com",
+      "requestParameters": {
+        "aggregateField": "eventTypeCategory",
+        "filter": {
+          "eventStatusCodes": [
+            "open",
+            "upcoming"
+          ],
+          "startTimes": [
+            {
+              "from": "Jun 10, 2020 12:45:13 AM"
+            }
+          ]
+        }
+      },
+      "responseElements": null,
+      "requestID": "aad95790-5708-4fd8-a591-e58ca2769351",
+      "eventID": "b1e1820a-cba7-4ecf-8e83-1423864aa14a",
+      "eventType": "AwsApiCall",
+      "recipientAccountId": "012345678901"
+    }
+  ]
+}

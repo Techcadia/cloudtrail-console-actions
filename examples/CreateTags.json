@@ -1,0 +1,35 @@
+{
+  "Records": [
+    {
+      "eventVersion": "1.05",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAJU2GYCKZ322Y5JOKC",
+        "arn": "arn:aws:iam::012345678901:user/first.last",
+        "accountId": "012345678901",
+        "accessKeyId": "ASIAQTKSM5RSQVJTJEW5",
+        "userName": "first.last",
+        "sessionContext": {
+          "sessionIssuer": {},
+          "webIdFederationData": {},
+          "attributes": {
+            "mfaAuthenticated": "true",
+            "creationDate": "2019-10-31T21:03:43Z"
+          }
+        },
+        "invokedBy": "signin.amazonaws.com"
+      },
+      "eventTime": "2019-10-31T21:29:15Z",
+      "eventSource": "ec2.amazonaws.com",
+      "eventName": "CreateTags",
+      "awsRegion": "us-west-2",
+      "sourceIPAddress": "1.1.1.1",
+      "userAgent": "signin.amazonaws.com",
+      "requestParameters": {},
+      "requestID": "783215f7-193f-460c-9956-fc5372f8504e",
+      "eventID": "b1d381b8-5d6d-40dd-bf05-c84ca6278825",
+      "eventType": "AwsApiCall",
+      "recipientAccountId": "012345678901"
+    }
+  ]
+}

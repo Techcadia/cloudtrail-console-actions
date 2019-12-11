@@ -1,0 +1,44 @@
+{
+  "Records": [
+    {
+      "eventVersion": "1.05",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAQTRSM5RS3D3VCIQTT",
+        "arn": "arn:aws:iam::012345678901:user/first.last",
+        "accountId": "012345678901",
+        "accessKeyId": "ASIAQTKSM5RSAUJMK416",
+        "userName": "first.last",
+        "sessionContext": {
+          "sessionIssuer": {},
+          "webIdFederationData": {},
+          "attributes": {
+            "mfaAuthenticated": "false",
+            "creationDate": "2019-10-02T20:09:24Z"
+          }
+        },
+        "invokedBy": "signin.amazonaws.com"
+      },
+      "eventTime": "2019-10-02T22:08:46Z",
+      "eventSource": "ec2.amazonaws.com",
+      "eventName": "ModifyInstanceAttribute",
+      "awsRegion": "us-west-2",
+      "sourceIPAddress": "123.123.123.123",
+      "userAgent": "signin.amazonaws.com",
+      "requestParameters": {
+        "instanceId": "i-09c0962723ab84080",
+        "instanceType": {
+          "value": "t2.xlarge"
+        }
+      },
+      "responseElements": {
+        "requestId": "acff2b98-cada-4d9a-a30d-c4863d4d8a2b",
+        "_return": true
+      },
+      "requestId": "acff2b98-cada-4d9a-a30d-c4863d4d8a2b",
+      "eventID": "e82886eb-28a8-437f-ad53-rabd7255a59d94",
+      "eventType": "AwsApiCall",
+      "recipientAccountId": "012345678901"
+    }
+  ]
+}

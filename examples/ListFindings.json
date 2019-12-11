@@ -1,0 +1,28 @@
+{
+  "Records": [
+    {
+      "eventVersion": "1.05",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAJ7MRGEAR7LIHEEKMY",
+        "arn": "arn:aws:iam::012345678901:user/splunk",
+        "accountId": "012345678901",
+        "accessKeyId": "AKIA3CY7M2V4VK5NJ5IE",
+        "userName": "splunk"
+      },
+      "eventTime": "2020-06-17T00:44:49Z",
+      "eventSource": "inspector.amazonaws.com",
+      "eventName": "ListFindings",
+      "awsRegion": "us-east-1",
+      "sourceIPAddress": "52.0.211.20",
+      "userAgent": "Boto3/1.5.22 Python/2.7.14 Linux/3.10.0-862.6.3.el7.x86_64 Botocore/1.8.46",
+      "requestParameters": {},
+      "responseElements": null,
+      "requestID": "cfd0cbb7-e167-4319-89ed-fb4d4f04d838",
+      "eventID": "1473b129-0d63-20a8-bda2-3da38ecca79e",
+      "eventType": "AwsApiCall",
+      "apiVersion": "v20160216",
+      "recipientAccountId": "012345678901"
+    }
+  ]
+}
