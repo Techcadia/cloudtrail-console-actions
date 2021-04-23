@@ -26,7 +26,10 @@ func TestReadExamples(t *testing.T) {
 			log.Fatal(err)
 		}
 
-		testReadLogFile(t, []byte(content))
+		err = testReadLogFile(t, []byte(content))
+		if err != nil {
+			t.Fatal(fmt.Errorf("%s: %v", path, err))
+		}
 	}
 }
 
@@ -38,12 +41,12 @@ func (bc BufferCloser) Close() error {
 	return nil
 }
 
-func testReadLogFile(t *testing.T, testData []byte) {
+func testReadLogFile(t *testing.T, testData []byte) error {
 	buf := BufferCloser{&bytes.Buffer{}}
 	gzip := gzip.NewWriter(&buf)
 	_, err := gzip.Write(testData)
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
 	gzip.Close()
 
@@ -52,12 +55,13 @@ func testReadLogFile(t *testing.T, testData []byte) {
 
 	logFile, err := readLogFile(obj)
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
 
 	FilterRecords(logFile)
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
 
+	return nil
 }
