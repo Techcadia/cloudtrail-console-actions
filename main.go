@@ -32,7 +32,7 @@ func init() {
 
 func main() {
 	log.SetFormatter(&log.JSONFormatter{})
-	log.Info("Starting v0.1.0")
+	log.Info("Starting v0.1.1")
 	lambda.Start(S3Handler)
 }
 
@@ -153,29 +153,23 @@ func FilterRecords(logFile *CloudTrailFile) error {
 		}
 
 		userName := fmt.Sprintf("%s", userIdentity["principalId"])
-
 		if strings.Contains(userName, ":") {
 			userName = strings.Split(userName, ":")[1]
 		}
-
 		if userIdentity["userName"] != nil {
 			userName = fmt.Sprintf("%s", userIdentity["userName"])
 		}
 
-		log.Infof("User Agent: %s", record["userAgent"])
-		log.Infof("Event Time: %s", record["eventTime"])
-		log.Infof("Principal: %s", userIdentity["principalId"])
-		if userIdentity["userName"] != nil {
-			log.Infof("Username: %s", userIdentity["userName"])
-		}
-
-		log.Infof("Event Source: %s\n", record["eventSource"])
-		log.Infof("Event Name: %s\n", record["eventName"])
-		log.Infof("Account ID: %s\n", userIdentity["accountId"])
-		log.Infof("Event ID: <https://console.aws.amazon.com/cloudtrail/home?region=%s#/events?EventId=%s|%s>\n",
-			record["awsRegion"],
-			record["eventID"],
-			record["eventID"])
+		log.WithFields(log.Fields{
+			"user_agent":   record["userAgent"],
+			"event_time":   record["eventTime"],
+			"principal":    userIdentity["principalId"],
+			"user_name":    userName,
+			"event_source": record["eventSource"],
+			"event_name":   record["eventName"],
+			"account_id":   userIdentity["accountId"],
+			"event_id":     record["eventID"],
+		}).Info("Event")
 
 		slackBody := fmt.Sprintf(`
 {
@@ -212,12 +206,13 @@ func FilterRecords(logFile *CloudTrailFile) error {
 			os.Getenv("SLACK_CHANNEL"),
 			record["eventName"],
 			record["eventSource"],
-			getEnv(fmt.Sprintf("SLACK_NAME_%s", userIdentity["accountId"]), getEnv("SLACK_NAME", fmt.Sprintf("%s", userIdentity["accountId"]))),
+			getEnv(
+				fmt.Sprintf("SLACK_NAME_%s", userIdentity["accountId"]),
+				getEnv("SLACK_NAME", fmt.Sprintf("%s", userIdentity["accountId"]))),
 			userName,
 			record["awsRegion"],
 			record["eventID"],
 			record["eventTime"])
-		log.Infof("Payload: %v", slackBody)
 
 		if webhookUrl, ok := os.LookupEnv("SLACK_WEBHOOK"); ok {
 			err := SendSlackNotification(webhookUrl, []byte(slackBody))
