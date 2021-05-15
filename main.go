@@ -171,7 +171,8 @@ func FilterRecords(logFile *CloudTrailFile) error {
 			"event_id":     record["eventID"],
 		}).Info("Event")
 
-		slackBody := fmt.Sprintf(`
+		if webhookUrl, ok := os.LookupEnv("SLACK_WEBHOOK"); ok {
+			slackBody := fmt.Sprintf(`
 {
   "channel": "%s",
   "text": "Not Used",
@@ -203,18 +204,17 @@ func FilterRecords(logFile *CloudTrailFile) error {
   ]
 }
 `,
-			os.Getenv("SLACK_CHANNEL"),
-			record["eventName"],
-			record["eventSource"],
-			getEnv(
-				fmt.Sprintf("SLACK_NAME_%s", userIdentity["accountId"]),
-				getEnv("SLACK_NAME", fmt.Sprintf("%s", userIdentity["accountId"]))),
-			userName,
-			record["awsRegion"],
-			record["eventID"],
-			record["eventTime"])
+				os.Getenv("SLACK_CHANNEL"),
+				record["eventName"],
+				record["eventSource"],
+				getEnv(
+					fmt.Sprintf("SLACK_NAME_%s", userIdentity["accountId"]),
+					getEnv("SLACK_NAME", fmt.Sprintf("%s", userIdentity["accountId"]))),
+				userName,
+				record["awsRegion"],
+				record["eventID"],
+				record["eventTime"])
 
-		if webhookUrl, ok := os.LookupEnv("SLACK_WEBHOOK"); ok {
 			err := SendSlackNotification(webhookUrl, []byte(slackBody))
 			if err != nil {
 				log.Debugln(slackBody)
