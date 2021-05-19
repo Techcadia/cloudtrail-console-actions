@@ -2,16 +2,21 @@
 
 Problem: CloudTrail signal to noise ratio is too noisy for a human to understand. This Lambda's goal is to find actionable events and alert/log them.
 
-<img src="docs/assets/flow-diagram-2021-05-14.png" alt="flow-diagram-2021-05-14" style="zoom:50%;" />
+<img src="docs/assets/flow-diagram-2021-05-14.png" alt="flow-diagram-2021-05-14" width="50%" height="50%" />
 
 ## Examples
 
 [Event](https://app.slack.com/block-kit-builder/T4BH42T2M#%7B%22blocks%22:%5B%7B%22type%22:%22section%22,%22text%22:%7B%22type%22:%22mrkdwn%22,%22text%22:%22*PutUserPolicy*%20-%20iam.amazonaws.com%22%7D%7D,%7B%22type%22:%22context%22,%22elements%22:%5B%7B%22type%22:%22mrkdwn%22,%22text%22:%22:maple_leaf:%20NON-PRD%22%7D,%7B%22type%22:%22mrkdwn%22,%22text%22:%22john.doe@example.com%22%7D,%7B%22type%22:%22mrkdwn%22,%22text%22:%22%3Chttps://console.aws.amazon.com/cloudtrail/home?region=%25s#/events?EventId=404956a8-8b3a-400e-a180-5b0659d77403%7C2021-05-14T19:03:40Z%3E%22%7D%5D%7D%5D%7D) in Slack
 
-<img align="left" src="docs/assets/image-20210514145815015.png" alt="image-20210514145815015" style="zoom:50%;" />
+<img src="docs/assets/image-20210514145815015.png" alt="image-20210514145815015" width="50%" height="50%" />
 
-Event in CloudWatch
-
+CloudWatch Search terms
+```
+fields @timestamp, @message
+| sort @timestamp desc
+| filter msg == "Event"
+```
+Example Event
 ```
 {
   "account_id": "123456789012",

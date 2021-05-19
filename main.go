@@ -32,7 +32,7 @@ func init() {
 
 func main() {
 	log.SetFormatter(&log.JSONFormatter{})
-	log.Info("Starting v0.1.1")
+	log.Info("Starting v0.1.3")
 	lambda.Start(S3Handler)
 }
 
@@ -55,14 +55,20 @@ func S3Handler(ctx context.Context, s3Event events.S3Event) error {
 
 func FilterRecords(logFile *CloudTrailFile) error {
 	for _, record := range logFile.Records {
+		userIdentity, _ := record["userIdentity"].(map[string]interface{})
+
+		if userIdentity["invokedBy"] == "AWS Internal" {
+			continue
+		}
+
 		switch en := record["eventName"].(string); {
-		case strings.HasPrefix(en, "Get"):
+		// Some events don't match AWS defined standards
+		// So we have to convert the input to Title
+		case strings.HasPrefix(strings.Title(en), "Get"):
 			continue
-		case strings.HasPrefix(en, "get"):
-			continue
-		case strings.HasPrefix(en, "List"):
-			continue
-		case strings.HasPrefix(en, "list"):
+		// Some events don't match AWS defined standards
+		// So we have to convert the input to Title
+		case strings.HasPrefix(strings.Title(en), "List"):
 			continue
 		case strings.HasPrefix(en, "Head"):
 			continue
@@ -78,35 +84,38 @@ func FilterRecords(logFile *CloudTrailFile) error {
 			continue
 		case en == "CheckMfa":
 			continue
+		case en == "CheckDomainAvailability":
+			continue
 		case en == "LookupEvents":
 			continue
 		case en == "listDnssec":
 			continue
 		case en == "Decrypt":
 			continue
+		case en == "BatchGetQueryExecution":
+			continue
 		case en == "QueryObjects":
 			continue
-		case en == "StartQuery":
+		case strings.HasPrefix(en, "StartQuery"):
 			continue
-		case en == "StopQuery":
+		case strings.HasPrefix(en, "StopQuery"):
 			continue
-		case en == "CancelQuery":
+		case strings.HasPrefix(en, "CancelQuery"):
+			continue
+		case strings.HasPrefix(en, "BatchGet"):
 			continue
 		case strings.HasPrefix(en, "Search"):
 			continue
-
 		case en == "GenerateServiceLastAccessedDetails":
 			continue
 		case en == "REST.GET.OBJECT_LOCK_CONFIGURATION":
 			continue
-		}
-
-		userIdentity, _ := record["userIdentity"].(map[string]interface{})
-		if userIdentity["invokedBy"] == "AWS Internal" {
+		case en == "AssumeRoleWithWebIdentity":
 			continue
-		}
-
-		switch en := record["eventName"]; {
+		case en == "PutQueryDefinition":
+			if record["eventSource"] == "logs.amazonaws.com" {
+				continue
+			}
 		case en == "AssumeRole":
 			if record["userAgent"] == "Coral/Netty4" {
 				switch userIdentity["invokedBy"] {
@@ -118,9 +127,6 @@ func FilterRecords(logFile *CloudTrailFile) error {
 					continue
 				}
 			}
-
-		case en == "AssumeRoleWithWebIdentity":
-			continue
 		}
 
 		if usa, ok := record["userAgent"]; ok {

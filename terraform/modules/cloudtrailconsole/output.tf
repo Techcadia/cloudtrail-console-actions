@@ -3,8 +3,21 @@ output "default" {
   value = {
     lambda = aws_lambda_function.default
     iam = {
-      role   = aws_iam_role.default
-      policy = aws_iam_role_policy.default
+      role = merge(
+        aws_iam_role.default,
+        {
+          // Filter out things that are not useful
+          assume_role_policy = null,
+          inline_policy      = null
+        }
+      )
+      policy = merge(
+        aws_iam_role_policy.default,
+        {
+          // Filter out things that are not useful
+          policy = null
+        }
+      )
     }
     s3 = {
       bucket              = data.aws_s3_bucket.default
