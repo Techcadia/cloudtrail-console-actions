@@ -32,7 +32,7 @@ func init() {
 
 func main() {
 	log.SetFormatter(&log.JSONFormatter{})
-	log.Info("Starting v0.1.3")
+	log.Info("Starting v0.1.4")
 	lambda.Start(S3Handler)
 }
 
