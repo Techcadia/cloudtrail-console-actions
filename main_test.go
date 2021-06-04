@@ -21,6 +21,7 @@ func TestReadExamples(t *testing.T) {
 
 	for _, f := range files {
 		path := fmt.Sprintf("%s/%s", dir, f.Name())
+		log.Printf("Test File: %s", path)
 		content, err := ioutil.ReadFile(path)
 		if err != nil {
 			log.Fatal(err)
