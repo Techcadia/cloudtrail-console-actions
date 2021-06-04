@@ -151,7 +151,7 @@ func FilterRecords(logFile *CloudTrailFile) error {
 				break
 			case matchString("signin.*.amazonaws.com", ua):
 				break
-			case matchString("aws-internal*AWSLambdaConsole/*", ua):
+			case matchString("aws-internal*", ua):
 				break
 			default:
 				continue
