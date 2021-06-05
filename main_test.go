@@ -8,6 +8,7 @@ import (
 	"log"
 	"testing"
 
+	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go/service/s3"
 )
 
@@ -27,7 +28,7 @@ func TestReadExamples(t *testing.T) {
 			log.Fatal(err)
 		}
 
-		err = testReadLogFile(t, []byte(content))
+		err = testReadLogFile(t, []byte(content), path)
 		if err != nil {
 			t.Fatal(fmt.Errorf("%s: %v", path, err))
 		}
@@ -42,7 +43,7 @@ func (bc BufferCloser) Close() error {
 	return nil
 }
 
-func testReadLogFile(t *testing.T, testData []byte) error {
+func testReadLogFile(t *testing.T, testData []byte, path string) error {
 	buf := BufferCloser{&bytes.Buffer{}}
 	gzip := gzip.NewWriter(&buf)
 	_, err := gzip.Write(testData)
@@ -59,7 +60,17 @@ func testReadLogFile(t *testing.T, testData []byte) error {
 		return err
 	}
 
-	FilterRecords(logFile)
+	FilterRecords(logFile, events.S3EventRecord{
+		AWSRegion: "us-east-1",
+		S3: events.S3Entity{
+			Bucket: events.S3Bucket{
+				Name: "test-harness",
+			},
+			Object: events.S3Object{
+				Key: path,
+			},
+		},
+	})
 	if err != nil {
 		return err
 	}

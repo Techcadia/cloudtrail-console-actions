@@ -32,7 +32,7 @@ func init() {
 
 func main() {
 	log.SetFormatter(&log.JSONFormatter{})
-	log.Info("Starting v0.1.4")
+	log.Info("Starting v0.1.5")
 	lambda.Start(S3Handler)
 }
 
@@ -40,11 +40,7 @@ func S3Handler(ctx context.Context, s3Event events.S3Event) error {
 	log.Infof("S3 event: %v", s3Event)
 
 	for _, s3Record := range s3Event.Records {
-		err := Stream(
-			s3Record.AWSRegion,
-			s3Record.S3.Bucket.Name,
-			s3Record.S3.Object.Key,
-		)
+		err := Stream(s3Record)
 		if err != nil {
 			return err
 		}
@@ -53,7 +49,7 @@ func S3Handler(ctx context.Context, s3Event events.S3Event) error {
 	return nil
 }
 
-func FilterRecords(logFile *CloudTrailFile) error {
+func FilterRecords(logFile *CloudTrailFile, evt events.S3EventRecord) error {
 	for _, record := range logFile.Records {
 		userIdentity, _ := record["userIdentity"].(map[string]interface{})
 
@@ -70,6 +66,10 @@ func FilterRecords(logFile *CloudTrailFile) error {
 		// So we have to convert the input to Title
 		case strings.HasPrefix(strings.Title(en), "List"):
 			continue
+		// Some events don't match AWS defined standards
+		// So we have to convert the input to Title
+		case strings.HasPrefix(strings.Title(en), "View"):
+			continue
 		case strings.HasPrefix(en, "Head"):
 			continue
 		case strings.HasPrefix(en, "Describe"):
@@ -77,6 +77,20 @@ func FilterRecords(logFile *CloudTrailFile) error {
 		case strings.HasPrefix(en, "Test"):
 			continue
 		case strings.HasPrefix(en, "Download"):
+			continue
+		case strings.HasPrefix(en, "Report"):
+			continue
+		case strings.HasPrefix(en, "Poll"):
+			continue
+		case strings.HasPrefix(en, "Verify"):
+			continue
+		case strings.HasPrefix(en, "Skip"):
+			continue
+		case strings.HasPrefix(en, "Count"):
+			continue
+		case strings.HasPrefix(en, "Detect"):
+			continue
+		case strings.HasPrefix(en, "Lookup"):
 			continue
 		case en == "ConsoleLogin":
 			continue
@@ -86,11 +100,9 @@ func FilterRecords(logFile *CloudTrailFile) error {
 			continue
 		case en == "CheckDomainAvailability":
 			continue
-		case en == "LookupEvents":
-			continue
-		case en == "listDnssec":
-			continue
 		case en == "Decrypt":
+			continue
+		case en == "SetTaskStatus":
 			continue
 		case en == "BatchGetQueryExecution":
 			continue
@@ -116,6 +128,18 @@ func FilterRecords(logFile *CloudTrailFile) error {
 			if record["eventSource"] == "logs.amazonaws.com" {
 				continue
 			}
+		case en == "PutObject":
+			// Fingerprinting on KeyPath for LB Logs
+			// Objects are originating outside our account with these account ids.
+			// https://docs.aws.amazon.com/elasticloadbalancing/latest/classic/enable-access-logs.html
+			if rps, ok := record["requestParameters"].(map[string]interface{}); ok {
+				if k, ok := rps["key"].(string); ok {
+					if strings.HasPrefix(k, "elb/AWSLogs") {
+						continue
+					}
+				}
+			}
+
 		case en == "AssumeRole":
 			if record["userAgent"] == "Coral/Netty4" {
 				switch userIdentity["invokedBy"] {
@@ -140,6 +164,8 @@ func FilterRecords(logFile *CloudTrailFile) error {
 			case ua == "Coral/Netty4":
 				break
 			case ua == "AWS CloudWatch Console":
+				break
+			case strings.HasPrefix(ua, "AWS Signin"):
 				break
 			case strings.HasPrefix(ua, "S3Console/"):
 				break
@@ -175,6 +201,7 @@ func FilterRecords(logFile *CloudTrailFile) error {
 			"event_name":   record["eventName"],
 			"account_id":   userIdentity["accountId"],
 			"event_id":     record["eventID"],
+			"s3_uri":       fmt.Sprintf("s3://%s/%s", evt.S3.Bucket.Name, evt.S3.Object.Key),
 		}).Info("Event")
 
 		if webhookUrl, ok := os.LookupEnv("SLACK_WEBHOOK"); ok {
@@ -232,44 +259,46 @@ func FilterRecords(logFile *CloudTrailFile) error {
 	return nil
 }
 
-func Stream(awsRegion string, bucket string, objectKey string) error {
-	s3ClientConfig := aws.NewConfig().WithRegion(awsRegion)
+func Stream(evt events.S3EventRecord) error {
+	s3ClientConfig := aws.NewConfig().WithRegion(evt.AWSRegion)
 	s3Client := s3.New(session.Must(session.NewSession()), s3ClientConfig)
+	s3Bucket := evt.S3.Bucket.Name
+	s3Object := evt.S3.Object.Key
 
-	log.Debugf("Reading %s from %s with client config of %+v", objectKey, bucket, s3Client.Config)
+	log.Debugf("Reading %s from %s with client config of %+v", s3Object, s3Bucket, s3Client.Config)
 
-	object, err := fetchLogFromS3(s3Client, bucket, objectKey)
+	obj, err := fetchLogFromS3(s3Client, s3Bucket, s3Object)
 	if err != nil {
-		return fmt.Errorf("%v: %v", objectKey, err)
+		return fmt.Errorf("%v: %v", s3Object, err)
 	}
-	if object == nil {
+	if obj == nil {
 		return nil
 	}
 
-	logFile, err := readLogFile(object)
+	logFile, err := readLogFile(obj)
 	if err != nil {
-		return fmt.Errorf("%v: %v", objectKey, err)
+		return fmt.Errorf("%v: %v", s3Object, err)
 	}
 
-	err = FilterRecords(logFile)
+	err = FilterRecords(logFile, evt)
 	if err != nil {
-		return fmt.Errorf("%v: %v", objectKey, err)
+		return fmt.Errorf("%v: %v", s3Object, err)
 	}
 
 	return nil
 }
 
-func fetchLogFromS3(s3Client *s3.S3, bucket string, objectKey string) (*s3.GetObjectOutput, error) {
+func fetchLogFromS3(s3Client *s3.S3, s3Bucket string, s3Object string) (*s3.GetObjectOutput, error) {
 	logInput := &s3.GetObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(objectKey),
+		Bucket: aws.String(s3Bucket),
+		Key:    aws.String(s3Object),
 	}
 
-	if strings.Contains(objectKey, "/CloudTrail-Digest/") || strings.Contains(objectKey, "/Config/") {
+	if strings.Contains(s3Object, "/CloudTrail-Digest/") || strings.Contains(s3Object, "/Config/") {
 		return nil, nil
 	}
 
-	object, err := s3Client.GetObject(logInput)
+	obj, err := s3Client.GetObject(logInput)
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
 			return nil, fmt.Errorf("AWS Error: %v", aerr)
@@ -277,7 +306,7 @@ func fetchLogFromS3(s3Client *s3.S3, bucket string, objectKey string) (*s3.GetOb
 		return nil, fmt.Errorf("Error getting S3 Object: %v", err)
 	}
 
-	return object, nil
+	return obj, nil
 }
 
 func readLogFile(object *s3.GetObjectOutput) (*CloudTrailFile, error) {
