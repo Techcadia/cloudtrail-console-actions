@@ -32,11 +32,11 @@ func init() {
 
 func main() {
 	log.SetFormatter(&log.JSONFormatter{})
-	log.Info("Starting v0.1.5")
-	lambda.Start(S3Handler)
+	log.Info("Starting v0.1.6")
+	lambda.Start(Handler)
 }
 
-func S3Handler(ctx context.Context, s3Event events.S3Event) error {
+func Handler(ctx context.Context, s3Event events.S3Event) error {
 	log.Infof("S3 event: %v", s3Event)
 
 	for _, s3Record := range s3Event.Records {
@@ -92,14 +92,33 @@ func FilterRecords(logFile *CloudTrailFile, evt events.S3EventRecord) error {
 			continue
 		case strings.HasPrefix(en, "Lookup"):
 			continue
+		case strings.HasPrefix(en, "AdminList"):
+			if record["eventSource"] == "cognito-idp.amazonaws.com" {
+				continue
+			}
+		case strings.HasPrefix(en, "AdminGet"):
+			if record["eventSource"] == "cognito-idp.amazonaws.com" {
+				continue
+			}
 		case en == "ConsoleLogin":
 			continue
 		case strings.HasSuffix(en, "VirtualMFADevice"):
 			continue
 		case en == "CheckMfa":
 			continue
+		case en == "InitiateAuth":
+			// cognito-idp.amazonaws.com - Refresh Token
+			if userIdentity["principalId"] == "Anonymous" {
+				continue
+			}
 		case en == "CheckDomainAvailability":
 			continue
+		case en == "AccessKubernetesApi":
+			// eks.amazonaws.com
+			if record["readOnly"] == true {
+				// TODO: Validate that this command only does readOnly events
+				continue
+			}
 		case en == "Decrypt":
 			continue
 		case en == "SetTaskStatus":
@@ -107,6 +126,8 @@ func FilterRecords(logFile *CloudTrailFile, evt events.S3EventRecord) error {
 		case en == "BatchGetQueryExecution":
 			continue
 		case en == "QueryObjects":
+			continue
+		case en == "ValidatePolicy":
 			continue
 		case strings.HasPrefix(en, "StartQuery"):
 			continue
@@ -132,15 +153,16 @@ func FilterRecords(logFile *CloudTrailFile, evt events.S3EventRecord) error {
 			// Fingerprinting on KeyPath for LB Logs
 			// Objects are originating outside our account with these account ids.
 			// https://docs.aws.amazon.com/elasticloadbalancing/latest/classic/enable-access-logs.html
-			if rps, ok := record["requestParameters"].(map[string]interface{}); ok {
-				if k, ok := rps["key"].(string); ok {
-					if strings.HasPrefix(k, "elb/AWSLogs") {
-						continue
+			if userIdentity["type"] == "AWSAccount" {
+				if rps, ok := record["requestParameters"].(map[string]interface{}); ok {
+					if k, ok := rps["key"].(string); ok {
+						if strings.Contains(k, "/AWSLogs/") && strings.Contains(k, "/elasticloadbalancing/") {
+							continue
+						}
 					}
 				}
 			}
-
-		case en == "AssumeRole":
+		case strings.HasPrefix(en, "AssumeRole"):
 			if record["userAgent"] == "Coral/Netty4" {
 				switch userIdentity["invokedBy"] {
 				case
@@ -150,6 +172,9 @@ func FilterRecords(logFile *CloudTrailFile, evt events.S3EventRecord) error {
 					"lambda.amazonaws.com":
 					continue
 				}
+			}
+			if userIdentity["type"] == "SAMLUser" {
+				continue
 			}
 		}
 
