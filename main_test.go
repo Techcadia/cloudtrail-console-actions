@@ -8,6 +8,7 @@ import (
 	"log"
 	"testing"
 
+	"github.com/Techcadia/cloudtrail-console-actions/pkg/handler"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go/service/s3"
 )
@@ -60,7 +61,7 @@ func testReadLogFile(t *testing.T, testData []byte, path string) error {
 		return err
 	}
 
-	FilterRecords(logFile, events.S3EventRecord{
+	FilterRecords(logFile, handler.Record{
 		AWSRegion: "us-east-1",
 		S3: events.S3Entity{
 			Bucket: events.S3Bucket{
