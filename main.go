@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-lambda-go/events"
+	"github.com/Techcadia/cloudtrail-console-actions/pkg/handler"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -32,15 +32,15 @@ func init() {
 
 func main() {
 	log.SetFormatter(&log.JSONFormatter{})
-	log.Info("Starting v0.1.6")
+	log.Info("Starting v0.1.7")
 	lambda.Start(Handler)
 }
 
-func Handler(ctx context.Context, s3Event events.S3Event) error {
-	log.Infof("S3 event: %v", s3Event)
+func Handler(ctx context.Context, event handler.Event) error {
+	log.Infof("S3 event: %v", event)
 
-	for _, s3Record := range s3Event.Records {
-		err := Stream(s3Record)
+	for _, record := range event.Records {
+		err := Stream(record)
 		if err != nil {
 			return err
 		}
@@ -49,7 +49,7 @@ func Handler(ctx context.Context, s3Event events.S3Event) error {
 	return nil
 }
 
-func FilterRecords(logFile *CloudTrailFile, evt events.S3EventRecord) error {
+func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 	for _, record := range logFile.Records {
 		userIdentity, _ := record["userIdentity"].(map[string]interface{})
 
@@ -226,7 +226,7 @@ func FilterRecords(logFile *CloudTrailFile, evt events.S3EventRecord) error {
 			"event_name":   record["eventName"],
 			"account_id":   userIdentity["accountId"],
 			"event_id":     record["eventID"],
-			"s3_uri":       fmt.Sprintf("s3://%s/%s", evt.S3.Bucket.Name, evt.S3.Object.Key),
+			"s3_uri":       fmt.Sprintf("s3://%s/%s", eventRecord.S3.Bucket.Name, eventRecord.S3.Object.Key),
 		}).Info("Event")
 
 		if webhookUrl, ok := os.LookupEnv("SLACK_WEBHOOK"); ok {
@@ -284,11 +284,11 @@ func FilterRecords(logFile *CloudTrailFile, evt events.S3EventRecord) error {
 	return nil
 }
 
-func Stream(evt events.S3EventRecord) error {
-	s3ClientConfig := aws.NewConfig().WithRegion(evt.AWSRegion)
+func Stream(eventRecord handler.Record) error {
+	s3ClientConfig := aws.NewConfig().WithRegion(eventRecord.AWSRegion)
 	s3Client := s3.New(session.Must(session.NewSession()), s3ClientConfig)
-	s3Bucket := evt.S3.Bucket.Name
-	s3Object := evt.S3.Object.Key
+	s3Bucket := eventRecord.S3.Bucket.Name
+	s3Object := eventRecord.S3.Object.Key
 
 	log.Debugf("Reading %s from %s with client config of %+v", s3Object, s3Bucket, s3Client.Config)
 
@@ -305,7 +305,7 @@ func Stream(evt events.S3EventRecord) error {
 		return fmt.Errorf("%v: %v", s3Object, err)
 	}
 
-	err = FilterRecords(logFile, evt)
+	err = FilterRecords(logFile, eventRecord)
 	if err != nil {
 		return fmt.Errorf("%v: %v", s3Object, err)
 	}
