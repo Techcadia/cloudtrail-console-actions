@@ -32,7 +32,7 @@ func init() {
 
 func main() {
 	log.SetFormatter(&log.JSONFormatter{})
-	log.Info("Starting v0.1.7")
+	log.Info("Starting v0.1.8")
 	lambda.Start(Handler)
 }
 
@@ -54,6 +54,11 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 		userIdentity, _ := record["userIdentity"].(map[string]interface{})
 
 		if userIdentity["invokedBy"] == "AWS Internal" {
+			continue
+		}
+
+		// codecommit
+		if record["eventSource"] == "codecommit.amazonaws.com" {
 			continue
 		}
 
@@ -80,11 +85,15 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 			continue
 		case strings.HasPrefix(en, "Report"):
 			continue
+		case strings.HasPrefix(en, "Refresh"):
+			continue
 		case strings.HasPrefix(en, "Poll"):
 			continue
 		case strings.HasPrefix(en, "Verify"):
 			continue
 		case strings.HasPrefix(en, "Skip"):
+			continue
+		case strings.HasPrefix(en, "Select"):
 			continue
 		case strings.HasPrefix(en, "Count"):
 			continue
@@ -92,6 +101,7 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 			continue
 		case strings.HasPrefix(en, "Lookup"):
 			continue
+
 		case strings.HasPrefix(en, "AdminList"):
 			if record["eventSource"] == "cognito-idp.amazonaws.com" {
 				continue
@@ -100,6 +110,7 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 			if record["eventSource"] == "cognito-idp.amazonaws.com" {
 				continue
 			}
+
 		case en == "ConsoleLogin":
 			continue
 		case strings.HasSuffix(en, "VirtualMFADevice"):
