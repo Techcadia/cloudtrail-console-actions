@@ -32,7 +32,7 @@ func init() {
 
 func main() {
 	log.SetFormatter(&log.JSONFormatter{})
-	log.Info("Starting v0.1.8")
+	log.Info("Starting v0.1.9")
 	lambda.Start(Handler)
 }
 
@@ -156,10 +156,23 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 			continue
 		case en == "AssumeRoleWithWebIdentity":
 			continue
+
+		//cloudwatch.amazonaws.com
+		case en == "CreateLogStream":
+			if rps, ok := record["requestParameters"].(map[string]interface{}); ok {
+				if k, ok := rps["logGroupName"].(string); ok {
+					if k == "RDSOSMetrics" {
+						continue
+					}
+				}
+			}
+
 		case en == "PutQueryDefinition":
 			if record["eventSource"] == "logs.amazonaws.com" {
 				continue
 			}
+
+		// s3.amazonaws.com
 		case en == "PutObject":
 			// Fingerprinting on KeyPath for LB Logs
 			// Objects are originating outside our account with these account ids.
@@ -173,6 +186,8 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 					}
 				}
 			}
+
+		// iam.amazonaws.com
 		case strings.HasPrefix(en, "AssumeRole"):
 			if record["userAgent"] == "Coral/Netty4" {
 				switch userIdentity["invokedBy"] {
