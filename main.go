@@ -32,7 +32,7 @@ func init() {
 
 func main() {
 	log.SetFormatter(&log.JSONFormatter{})
-	log.Info("Starting v0.1.9")
+	log.Info("Starting v0.1.10")
 	lambda.Start(Handler)
 }
 
@@ -165,6 +165,40 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 						continue
 					}
 				}
+			}
+
+		//cloudshell.amazonaws.com
+		case en == "SendHeartBeat":
+			continue
+		//cloudshell.amazonaws.com
+		case en == "CreateEnvironment":
+			continue
+		//cloudshell.amazonaws.com
+		case en == "CreateSession":
+			continue
+		//cloudshell.amazonaws.com
+		case en == "DeleteEnvironment":
+			continue
+		//cloudshell.amazonaws.com
+		case en == "RedeemCode":
+			continue
+		//cloudshell.amazonaws.com
+		case en == "startEnvironment":
+			continue
+		//cloudshell.amazonaws.com
+		case en == "stopEnvironment":
+			continue
+		//cloudshell.amazonaws.com
+		case en == "PutCredentials":
+			continue
+
+		case en == "StartSession":
+			if record["eventSource"] == "ssm.amazonaws.com" {
+				continue
+			}
+		case en == "TerminateSession":
+			if record["eventSource"] == "ssm.amazonaws.com" {
+				continue
 			}
 
 		case en == "PutQueryDefinition":
