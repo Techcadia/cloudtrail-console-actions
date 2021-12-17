@@ -32,7 +32,7 @@ func init() {
 
 func main() {
 	log.SetFormatter(&log.JSONFormatter{})
-	log.Info("Starting v0.1.10")
+	log.Info("Starting v0.1.11")
 	lambda.Start(Handler)
 }
 
@@ -163,6 +163,36 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 				if k, ok := rps["logGroupName"].(string); ok {
 					if k == "RDSOSMetrics" {
 						continue
+					}
+				}
+			}
+
+		case en == "QueryDatabase":
+			if record["eventSource"] == "quicksight.amazonaws.com" {
+				continue
+			}
+
+		case en == "Federate":
+			if record["eventSource"] == "sso.amazonaws.com" {
+				continue
+			}
+		case en == "Authenticate":
+			if record["eventSource"] == "sso.amazonaws.com" {
+				continue
+			}
+		case en == "Logout":
+			if record["eventSource"] == "sso.amazonaws.com" {
+				continue
+			}
+
+		//signin.amazonaws.com
+		case en == "UserAuthentication":
+			if record["eventSource"] == "signin.amazonaws.com" {
+				if aed, ok := record["additionalEventData"].(map[string]interface{}); ok {
+					if k, ok := aed["CredentialType"].(string); ok {
+						if k == "EXTERNAL_IDP" {
+							continue
+						}
 					}
 				}
 			}
