@@ -1,6 +1,6 @@
 resource "aws_lambda_function" "default" {
-  filename                       = lookup(var.lambda, "filepath", "${path.module}/../../../dist/function.zip")
-  source_code_hash               = filebase64sha256(lookup(var.lambda, "filepath", "${path.module}/../../../dist/function.zip"))
+  filename                       = lookup(var.lambda, "filepath", "${path.module}/../../../../dist/function.zip")
+  source_code_hash               = filebase64sha256(lookup(var.lambda, "filepath", "${path.module}/../../../../dist/function.zip"))
   function_name                  = var.name
   handler                        = lookup(var.lambda, "handler", "main")
   runtime                        = lookup(var.lambda, "runtime", "go1.x")

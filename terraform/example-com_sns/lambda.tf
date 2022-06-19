@@ -6,14 +6,20 @@ module "default" {
     name = "example-com-non-prd-cloudtrail"
   }
 
+  sns = {
+    sns_topic = {
+      topic_arn = "arn:aws:sns:us-east-1:123456789012:CloudTrail"
+    }
+  }
+
   lambda = {
     # **Note**: Increase memory if you are experiencing slow s3 reads"
-    # memory                         = 128
-    # timeout                        = 15
-    # reserved_concurrent_executions = 10
-    # environment_variables          = {}
+    memory                         = 128
+    timeout                        = 15
+    reserved_concurrent_executions = 10
+    environment_variables          = {}
     # **Note**: Depending on your Terraform directory structure you might need to define the filepath.
-    # filepath                       = "../cloudtrail-console-actions/dist/function.zip"
+    filepath = "../../../cloudtrail-console-actions/dist/function.zip"
   }
 
   # slack does not need to be defined for cloudwatch logs to be emitted

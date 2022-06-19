@@ -1,11 +1,11 @@
 #!/bin/bash
 BACKTICK='`'
 cat << EOF > README.md
-# Getting Started with Terraform
+# Getting Started with Terraform S3 Module
 
 ${BACKTICK}${BACKTICK}${BACKTICK}hcl
-$(cat ./example-com/lambda.tf)
+$(cat ./lambda.tf)
 ${BACKTICK}${BACKTICK}${BACKTICK}
 
-$(terraform-docs markdown modules/cloudtrailconsole/)
+$(terraform-docs markdown ../modules/cloudtrailconsole/s3)
 EOF
