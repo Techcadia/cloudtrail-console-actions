@@ -32,7 +32,7 @@ func init() {
 
 func main() {
 	log.SetFormatter(&log.JSONFormatter{})
-	log.Info("Starting v0.1.11")
+	log.Info("Starting v0.1.14")
 	lambda.Start(Handler)
 }
 
@@ -57,12 +57,18 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 			continue
 		}
 
-		// codecommit
+		// codecommit.amazonaws.com
 		if record["eventSource"] == "codecommit.amazonaws.com" {
 			continue
 		}
 
-		switch en := record["eventName"].(string); {
+		// billingconsole.amazonaws.com
+		eventName := record["eventName"].(string)
+		if record["eventSource"] == "billingconsole.amazonaws.com" {
+			eventName = strings.TrimPrefix(eventName, "AWSPaymentPortalService.")
+		}
+
+		switch en := eventName; {
 		// Some events don't match AWS defined standards
 		// So we have to convert the input to Title
 		case strings.HasPrefix(strings.Title(en), "Get"):
@@ -106,11 +112,10 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 			if record["eventSource"] == "cognito-idp.amazonaws.com" {
 				continue
 			}
-		case strings.HasPrefix(en, "AdminGet"):
+		case strings.HasSuffix(strings.ToLower(en), "get"):
 			if record["eventSource"] == "cognito-idp.amazonaws.com" {
 				continue
 			}
-
 		case en == "ConsoleLogin":
 			continue
 		case strings.HasSuffix(en, "VirtualMFADevice"):
@@ -158,7 +163,7 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 			continue
 
 		//cloudwatch.amazonaws.com
-		case en == "CreateLogStream":
+		case strings.HasPrefix(en, "CreateLog"):
 			if rps, ok := record["requestParameters"].(map[string]interface{}); ok {
 				if k, ok := rps["logGroupName"].(string); ok {
 					if k == "RDSOSMetrics" {
@@ -222,11 +227,11 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 		case en == "PutCredentials":
 			continue
 
-		case en == "StartSession":
-			if record["eventSource"] == "ssm.amazonaws.com" {
-				continue
-			}
-		case en == "TerminateSession":
+		//ssm.amazonaws.com
+		case strings.HasSuffix(en, "Session"):
+			// ssm:StartSession
+			// ssm:ResumeSession
+			// ssm:TerminateSession
 			if record["eventSource"] == "ssm.amazonaws.com" {
 				continue
 			}
@@ -266,9 +271,16 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 			if userIdentity["type"] == "SAMLUser" {
 				continue
 			}
+			if userIdentity["type"] == "AWSAccount" {
+				continue
+			}
+
 		}
 
 		if usa, ok := record["userAgent"]; ok {
+			// This switch case is backwards from all the others.
+			// We are targeting specific UserAgents that are considered
+			// Console Actions
 			switch ua := usa.(string); {
 			case ua == "console.amazonaws.com":
 				break
@@ -292,9 +304,19 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 				break
 			case matchString("signin.*.amazonaws.com", ua):
 				break
-			case matchString("aws-internal*", ua):
+
+			// fsx.amazonaws.com uses AWS Internal
+			// Not sure if we need to filter for just that
+			// or if this is trapping more than it should.
+			// AWS Internal, aws-internal, aws-sdk-ruby aws-internal (...)
+			case matchString("(?i)aws[\\s-]internal", ua):
+				if matchString("^aws-vpc-flow-logs", ua) {
+					continue
+				}
 				break
 			default:
+				// If we can't determine the UserAgent
+				// we consider it most likely a CLI or IaC Tool.
 				continue
 			}
 		}
@@ -305,6 +327,11 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 		}
 		if userIdentity["userName"] != nil {
 			userName = fmt.Sprintf("%s", userIdentity["userName"])
+		}
+
+		var errorCode string
+		if ec, ok := record["errorCode"].(string); ok {
+			errorCode = fmt.Sprintf(" - `%s`", ec)
 		}
 
 		log.WithFields(log.Fields{
@@ -329,7 +356,7 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "*%s* - %s"
+        "text": "*%s* - %s%s"
       }
     },
     {
@@ -355,6 +382,7 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 				os.Getenv("SLACK_CHANNEL"),
 				record["eventName"],
 				record["eventSource"],
+				errorCode,
 				getEnv(
 					fmt.Sprintf("SLACK_NAME_%s", userIdentity["accountId"]),
 					getEnv("SLACK_NAME", fmt.Sprintf("%s", userIdentity["accountId"]))),
