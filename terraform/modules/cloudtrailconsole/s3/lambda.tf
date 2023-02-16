@@ -8,6 +8,7 @@ resource "aws_lambda_function" "default" {
   memory_size                    = lookup(var.lambda, "memory", 128)
   reserved_concurrent_executions = lookup(var.lambda, "reserved_concurrent_executions", 10)
   role                           = aws_iam_role.default.arn
+  architectures                  = lookup(var.lambda, "architectures", ["x86_64"])
 
   environment {
     variables = merge(

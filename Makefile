@@ -1,6 +1,9 @@
+ifndef ARCH
+override ARCH = amd64
+endif
+
 .PHONY: clean, build, zip
 default: build
-
 
 clean:
 	@test -d "./bin" && rm -rf ./bin/* || true
@@ -10,6 +13,7 @@ clean:
 
 build: clean
 	GOOS=linux \
+	GOARCH=$(ARCH) \
 	go build \
 	-o ./bin/main \
 	main.go
