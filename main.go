@@ -32,7 +32,7 @@ func init() {
 
 func main() {
 	log.SetFormatter(&log.JSONFormatter{})
-	log.Info("Starting v0.1.14")
+	log.Info("Starting v0.1.15")
 	lambda.Start(Handler)
 }
 
@@ -347,10 +347,14 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 		}).Info("Event")
 
 		if webhookUrl, ok := os.LookupEnv("SLACK_WEBHOOK"); ok {
+			slackName := getEnv(
+				fmt.Sprintf("SLACK_NAME_%s", userIdentity["accountId"]),
+				getEnv("SLACK_NAME", fmt.Sprintf("%s", userIdentity["accountId"])),
+			)
 			slackBody := fmt.Sprintf(`
 {
   "channel": "%s",
-  "text": "Not Used",
+  "text": "%s | %s | %s",
   "blocks": [
     {
       "type": "section",
@@ -380,12 +384,13 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 }
 `,
 				os.Getenv("SLACK_CHANNEL"),
+				slackName,
+				record["eventName"],
+				userName,
 				record["eventName"],
 				record["eventSource"],
 				errorCode,
-				getEnv(
-					fmt.Sprintf("SLACK_NAME_%s", userIdentity["accountId"]),
-					getEnv("SLACK_NAME", fmt.Sprintf("%s", userIdentity["accountId"]))),
+				slackName,
 				userName,
 				record["awsRegion"],
 				record["eventID"],
