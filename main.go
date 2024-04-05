@@ -32,7 +32,7 @@ func init() {
 
 func main() {
 	log.SetFormatter(&log.JSONFormatter{})
-	log.Info("Starting v0.1.15")
+	log.Info("Starting v0.1.16")
 	lambda.Start(Handler)
 }
 
@@ -57,15 +57,38 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 			continue
 		}
 
+		userName := fmt.Sprintf("%s", userIdentity["principalId"])
+		if strings.Contains(userName, ":") {
+			userName = strings.Split(userName, ":")[1]
+		}
+		if userIdentity["userName"] != nil {
+			userName = fmt.Sprintf("%s", userIdentity["userName"])
+		}
+
+		eventName := record["eventName"].(string)
+
 		// codecommit.amazonaws.com
 		if record["eventSource"] == "codecommit.amazonaws.com" {
 			continue
 		}
 
 		// billingconsole.amazonaws.com
-		eventName := record["eventName"].(string)
 		if record["eventSource"] == "billingconsole.amazonaws.com" {
 			eventName = strings.TrimPrefix(eventName, "AWSPaymentPortalService.")
+		}
+
+		// q.amazonaws.com
+		if record["eventSource"] == "q.amazonaws.com" {
+			if ec, ok := record["errorCode"].(string); ok {
+				if ec == "AccessDenied" || ec == "ThrottlingException" {
+					if eventName == "StartConversation" {
+						continue
+					}
+					if eventName == "SendMessage" {
+						continue
+					}
+				}
+			}
 		}
 
 		switch en := eventName; {
@@ -172,6 +195,16 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 				}
 			}
 
+		//ec2.amazonaws.com
+		case strings.HasPrefix(en, "CreateNetworkInterface"):
+			if rps, ok := record["requestParameters"].(map[string]interface{}); ok {
+				if k, ok := rps["description"].(string); ok {
+					if strings.HasPrefix(k, "AWS Lambda VPC ENI-") {
+						continue
+					}
+				}
+			}
+
 		case en == "QueryDatabase":
 			if record["eventSource"] == "quicksight.amazonaws.com" {
 				continue
@@ -236,6 +269,11 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 				continue
 			}
 
+		// "logs.amazonaws.com"
+		case en == "FilterLogEvents":
+			if record["eventSource"] == "logs.amazonaws.com" {
+				continue
+			}
 		case en == "PutQueryDefinition":
 			if record["eventSource"] == "logs.amazonaws.com" {
 				continue
@@ -275,6 +313,16 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 				continue
 			}
 
+		// batch.amazonaws.com
+		case en == "SubmitJob":
+			// Fingerprinting on userName, Length and Contents
+			// When called from AWS Step Functions the UA appears too similar to console actions
+			if len(userName) == 32 {
+				matched, _ := regexp.MatchString(`^[a-zA-Z]+$`, userName)
+				if matched {
+					continue
+				}
+			}
 		}
 
 		if usa, ok := record["userAgent"]; ok {
@@ -319,14 +367,6 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 				// we consider it most likely a CLI or IaC Tool.
 				continue
 			}
-		}
-
-		userName := fmt.Sprintf("%s", userIdentity["principalId"])
-		if strings.Contains(userName, ":") {
-			userName = strings.Split(userName, ":")[1]
-		}
-		if userIdentity["userName"] != nil {
-			userName = fmt.Sprintf("%s", userIdentity["userName"])
 		}
 
 		var errorCode string
