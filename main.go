@@ -32,7 +32,7 @@ func init() {
 
 func main() {
 	log.SetFormatter(&log.JSONFormatter{})
-	log.Info("Starting v0.1.16")
+	log.Info("Starting v0.1.17")
 	lambda.Start(Handler)
 }
 
@@ -66,6 +66,16 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 		}
 
 		eventName := record["eventName"].(string)
+
+		if record["eventName"] == "ssm.amazonaws.com" {
+			if eventName == "OpenDataChannel" {
+				if rps, ok := record["requestParameters"].(map[string]interface{}); ok {
+					if k, ok := rps["sessionId"].(string); ok {
+						userName = k
+					}
+				}
+			}
+		}
 
 		// codecommit.amazonaws.com
 		if record["eventSource"] == "codecommit.amazonaws.com" {
