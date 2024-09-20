@@ -411,10 +411,23 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 			"s3_uri":       fmt.Sprintf("s3://%s/%s", eventRecord.S3.Bucket.Name, eventRecord.S3.Object.Key),
 		}).Info("Event")
 
+		// Not all records include the accountId in the userIdentity field.
+		// This was originally identified in cognito-idp:RespondToAuthChallenge
+		// It makes finding the event difficult, so this falls back to another place
+		// where accountId might be listed, making investigation easier
+		var recordAccount string
+		if accountId, ok := userIdentity["accountId"].(string); ok {
+			recordAccount = accountId
+		} else if recipientAccountId, ok := record["recipientAccountId"].(string); ok {
+			recordAccount = fmt.Sprintf("Fallback: %s", recipientAccountId)
+		} else {
+			recordAccount = "Unknown"
+		}
+
 		if webhookUrl, ok := os.LookupEnv("SLACK_WEBHOOK"); ok {
 			slackName := getEnv(
 				fmt.Sprintf("SLACK_NAME_%s", userIdentity["accountId"]),
-				getEnv("SLACK_NAME", fmt.Sprintf("%s", userIdentity["accountId"])),
+				getEnv("SLACK_NAME", fmt.Sprintf("%s", recordAccount)),
 			)
 			slackBody := fmt.Sprintf(`
 {
