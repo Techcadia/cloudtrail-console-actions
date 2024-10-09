@@ -21,6 +21,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 type CloudTrailFile struct {
@@ -32,8 +34,12 @@ func init() {
 
 func main() {
 	log.SetFormatter(&log.JSONFormatter{})
-	log.Info("Starting v0.1.17")
+	log.Info("Starting v0.1.18")
 	lambda.Start(Handler)
+}
+
+func Title(s string) string {
+	return cases.Title(language.Und, cases.NoLower).String(s)
 }
 
 func Handler(ctx context.Context, event handler.Event) error {
@@ -67,7 +73,7 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 
 		eventName := record["eventName"].(string)
 
-		if record["eventName"] == "ssm.amazonaws.com" {
+		if record["eventSource"] == "ssm.amazonaws.com" {
 			if eventName == "OpenDataChannel" {
 				if rps, ok := record["requestParameters"].(map[string]interface{}); ok {
 					if k, ok := rps["sessionId"].(string); ok {
@@ -104,15 +110,15 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 		switch en := eventName; {
 		// Some events don't match AWS defined standards
 		// So we have to convert the input to Title
-		case strings.HasPrefix(strings.Title(en), "Get"):
+		case strings.HasPrefix(Title(en), "Get"):
 			continue
 		// Some events don't match AWS defined standards
 		// So we have to convert the input to Title
-		case strings.HasPrefix(strings.Title(en), "List"):
+		case strings.HasPrefix(Title(en), "List"):
 			continue
 		// Some events don't match AWS defined standards
 		// So we have to convert the input to Title
-		case strings.HasPrefix(strings.Title(en), "View"):
+		case strings.HasPrefix(Title(en), "View"):
 			continue
 		case strings.HasPrefix(en, "Head"):
 			continue
@@ -215,6 +221,16 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 				}
 			}
 
+			// elasticfilesystem.amazonaws.com
+			if en == "NewClientConnection" {
+				if record["eventSource"] == "elasticfilesystem.amazonaws.com" {
+					if userName != "" {
+						continue
+					}
+				}
+			}
+
+		// quicksight.amazonaws
 		case en == "QueryDatabase":
 			if record["eventSource"] == "quicksight.amazonaws.com" {
 				continue
