@@ -418,10 +418,9 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 		var recordAccount string
 		if accountId, ok := userIdentity["accountId"].(string); ok {
 			recordAccount = accountId
-		} else if recipientAccountId, ok := record["recipientAccountId"].(string); ok {
+		}
+    if recipientAccountId, ok := record["recipientAccountId"].(string); ok {
 			recordAccount = fmt.Sprintf("Fallback: %s", recipientAccountId)
-		} else {
-			recordAccount = "Unknown"
 		}
 
 		if webhookUrl, ok := os.LookupEnv("SLACK_WEBHOOK"); ok {
