@@ -221,12 +221,12 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 				}
 			}
 
-			// elasticfilesystem.amazonaws.com
-			if en == "NewClientConnection" {
-				if record["eventSource"] == "elasticfilesystem.amazonaws.com" {
-					if userName != "" {
-						continue
-					}
+		// elasticfilesystem.amazonaws.com
+		case en == "NewClientConnection":
+			if record["eventSource"] == "elasticfilesystem.amazonaws.com" {
+				if userName != "" {
+					// still post if anonymous/no user
+					continue
 				}
 			}
 
@@ -349,7 +349,6 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 					continue
 				}
 			}
-		}
 
 		if usa, ok := record["userAgent"]; ok {
 			// This switch case is backwards from all the others.
