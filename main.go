@@ -34,7 +34,7 @@ func init() {
 
 func main() {
 	log.SetFormatter(&log.JSONFormatter{})
-	log.Info("Starting v0.1.18")
+	log.Info("Starting v0.1.19")
 	lambda.Start(Handler)
 }
 
@@ -419,7 +419,7 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 		if accountId, ok := userIdentity["accountId"].(string); ok {
 			recordAccount = accountId
 		}
-    if recipientAccountId, ok := record["recipientAccountId"].(string); ok {
+		if recipientAccountId, ok := record["recipientAccountId"].(string); ok {
 			recordAccount = fmt.Sprintf("Fallback: %s", recipientAccountId)
 		}
 
