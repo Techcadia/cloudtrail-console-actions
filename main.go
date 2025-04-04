@@ -313,7 +313,7 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 			if userIdentity["type"] == "AWSAccount" {
 				if rps, ok := record["requestParameters"].(map[string]interface{}); ok {
 					if k, ok := rps["key"].(string); ok {
-						if strings.Contains(k, "/AWSLogs/") && strings.Contains(k, "/elasticloadbalancing/") {
+						if strings.Contains(k, "AWSLogs/") && strings.Contains(k, "/elasticloadbalancing/") {
 							continue
 						}
 					}
