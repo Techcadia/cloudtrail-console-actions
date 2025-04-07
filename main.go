@@ -373,6 +373,8 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 				break
 			case strings.HasPrefix(ua, "Mozilla/"):
 				break
+			case strings.HasPrefix(ua, "[Mozilla/"):
+				break
 			case matchString("console.*.amazonaws.com", ua):
 				break
 			case matchString("signin.*.amazonaws.com", ua):
