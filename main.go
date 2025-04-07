@@ -34,7 +34,7 @@ func init() {
 
 func main() {
 	log.SetFormatter(&log.JSONFormatter{})
-	log.Info("Starting v0.1.19")
+	log.Info("Starting v0.2.0")
 	lambda.Start(Handler)
 }
 
@@ -224,10 +224,9 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 		// elasticfilesystem.amazonaws.com
 		case en == "NewClientConnection":
 			if record["eventSource"] == "elasticfilesystem.amazonaws.com" {
-				if userName != "" {
-					// still post if anonymous/no user
-					continue
-				}
+				// We continue to get rate limited by slack for ANONYMOUS_PRINCIPAL's
+				// if userName != "" { continue } // ANONYMOUS_PRINCIPAL
+				continue
 			}
 
 		// quicksight.amazonaws
@@ -349,6 +348,7 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 					continue
 				}
 			}
+		}
 
 		if usa, ok := record["userAgent"]; ok {
 			// This switch case is backwards from all the others.
@@ -401,18 +401,6 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 			errorCode = fmt.Sprintf(" - `%s`", ec)
 		}
 
-		log.WithFields(log.Fields{
-			"user_agent":   record["userAgent"],
-			"event_time":   record["eventTime"],
-			"principal":    userIdentity["principalId"],
-			"user_name":    userName,
-			"event_source": record["eventSource"],
-			"event_name":   record["eventName"],
-			"account_id":   userIdentity["accountId"],
-			"event_id":     record["eventID"],
-			"s3_uri":       fmt.Sprintf("s3://%s/%s", eventRecord.S3.Bucket.Name, eventRecord.S3.Object.Key),
-		}).Info("Event")
-
 		// Not all records include the accountId in the userIdentity field.
 		// This was originally identified in cognito-idp:RespondToAuthChallenge
 		// It makes finding the event difficult, so this falls back to another place
@@ -421,9 +409,26 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 		if accountId, ok := userIdentity["accountId"].(string); ok {
 			recordAccount = accountId
 		}
+
 		if recipientAccountId, ok := record["recipientAccountId"].(string); ok {
-			recordAccount = fmt.Sprintf("Fallback: %s", recipientAccountId)
+			if record["eventSource"] == "cognito-idp.amazonaws.com" {
+				fmt.Sprintf("Fallback: %s", recipientAccountId)
+			} else {
+				recordAccount = recipientAccountId
+			}
 		}
+
+		log.WithFields(log.Fields{
+			"user_agent":   record["userAgent"],
+			"event_time":   record["eventTime"],
+			"principal":    userIdentity["principalId"],
+			"user_name":    userName,
+			"event_source": record["eventSource"],
+			"event_name":   record["eventName"],
+			"account_id":   recordAccount,
+			"event_id":     record["eventID"],
+			"s3_uri":       fmt.Sprintf("s3://%s/%s", eventRecord.S3.Bucket.Name, eventRecord.S3.Object.Key),
+		}).Info("Event")
 
 		if webhookUrl, ok := os.LookupEnv("SLACK_WEBHOOK"); ok {
 			slackName := getEnv(

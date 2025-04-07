@@ -1,5 +1,5 @@
 ifndef ARCH
-override ARCH = amd64
+override ARCH = arm64
 endif
 
 .PHONY: clean, build, zip
@@ -15,10 +15,12 @@ build: clean
 	GOOS=linux \
 	GOARCH=$(ARCH) \
 	go build \
+	-tags lambda.norpc \
 	-o ./bin/main \
 	main.go
 
 zip: build
-	zip ./dist/function.zip \
+	zip ./dist/function_$(ARCH).zip \
 	-j \
 	./bin/main
+	cd dist && find . -type f -name '*.zip' | xargs sha256sum >> sha256sums.txt
