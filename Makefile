@@ -16,11 +16,11 @@ build: clean
 	GOARCH=$(ARCH) \
 	go build \
 	-tags lambda.norpc \
-	-o ./bin/main \
+	-o ./bin/bootstrap \
 	main.go
 
 zip: build
 	zip ./dist/function_$(ARCH).zip \
 	-j \
-	./bin/main
+	./bin/bootstrap
 	cd dist && find . -type f -name '*.zip' | xargs sha256sum >> sha256sums.txt
