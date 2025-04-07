@@ -3,12 +3,12 @@ resource "aws_lambda_function" "default" {
   source_code_hash               = filebase64sha256(lookup(var.lambda, "filepath", "${path.module}/../../../../dist/function.zip"))
   function_name                  = var.name
   handler                        = lookup(var.lambda, "handler", "main")
-  runtime                        = lookup(var.lambda, "runtime", "go1.x")
+  runtime                        = lookup(var.lambda, "runtime", "provided.al2023")
   timeout                        = lookup(var.lambda, "timeout", 15)
   memory_size                    = lookup(var.lambda, "memory", 128)
   reserved_concurrent_executions = lookup(var.lambda, "reserved_concurrent_executions", 10)
   role                           = aws_iam_role.default.arn
-  architectures                  = lookup(var.lambda, "architectures", ["x86_64"])
+  architectures                  = lookup(var.lambda, "architectures", ["arm64"])
 
   environment {
     variables = merge(
