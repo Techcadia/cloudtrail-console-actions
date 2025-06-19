@@ -34,7 +34,7 @@ func init() {
 
 func main() {
 	log.SetFormatter(&log.JSONFormatter{})
-	log.Info("Starting v0.2.0")
+	log.Info("Starting v0.2.1")
 	lambda.Start(Handler)
 }
 
@@ -91,6 +91,18 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 		// billingconsole.amazonaws.com
 		if record["eventSource"] == "billingconsole.amazonaws.com" {
 			eventName = strings.TrimPrefix(eventName, "AWSPaymentPortalService.")
+			if eventName == "AssessSorChangeImpact" || eventName == "ConvertCurrencies" {
+				continue
+			}
+		}
+
+		// payments.amazonaws.com
+		if record["eventSource"] == "payments.amazonaws.com" {
+			if strings.Contains(eventName, "_Get") ||
+				strings.Contains(eventName, "_BatchGet") ||
+				strings.Contains(eventName, "_List") {
+				continue
+			}
 		}
 
 		// q.amazonaws.com
