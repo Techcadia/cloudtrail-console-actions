@@ -34,7 +34,7 @@ func init() {
 
 func main() {
 	log.SetFormatter(&log.JSONFormatter{})
-	log.Info("Starting v0.2.1")
+	log.Info("Starting v0.2.2")
 	lambda.Start(Handler)
 }
 
