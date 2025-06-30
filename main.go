@@ -34,7 +34,7 @@ func init() {
 
 func main() {
 	log.SetFormatter(&log.JSONFormatter{})
-	log.Info("Starting v0.2.2")
+	log.Info("Starting v0.2.3")
 	lambda.Start(Handler)
 }
 
@@ -92,6 +92,16 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 		if record["eventSource"] == "billingconsole.amazonaws.com" {
 			eventName = strings.TrimPrefix(eventName, "AWSPaymentPortalService.")
 			if eventName == "AssessSorChangeImpact" || eventName == "ConvertCurrencies" {
+				continue
+			}
+		}
+
+		if record["eventSource"] == "support-console.amazonaws.com" {
+			if strings.HasPrefix(eventName, "Check") {
+				continue
+			}
+			if eventName == "CreateCaseDraft" {
+				// This happens way too many times for a single support case (~40 times)
 				continue
 			}
 		}
