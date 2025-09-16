@@ -178,7 +178,10 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 				continue
 			}
 		case en == "ConsoleLogin":
-			continue
+			// Ignore ConsoleLogin events, except for Root
+			if userIdentity["type"] != "Root" {
+			    continue
+			}
 		case strings.HasSuffix(en, "VirtualMFADevice"):
 			continue
 		case en == "CheckMfa":
