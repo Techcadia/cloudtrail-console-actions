@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Techcadia/cloudtrail-console-actions/pkg/collector"
 	"github.com/Techcadia/cloudtrail-console-actions/pkg/handler"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go/aws"
@@ -34,7 +35,7 @@ func init() {
 
 func main() {
 	log.SetFormatter(&log.JSONFormatter{})
-	log.Info("Starting v0.2.3")
+	log.Info("Starting v0.3.2")
 	lambda.Start(Handler)
 }
 
@@ -45,17 +46,22 @@ func Title(s string) string {
 func Handler(ctx context.Context, event handler.Event) error {
 	log.Infof("S3 event: %v", event)
 
+	eventCollector := collector.NewEventCollector(sendAlert)
+
 	for _, record := range event.Records {
-		err := Stream(record)
+		err := Stream(record, eventCollector)
 		if err != nil {
 			return err
 		}
 	}
 
+	eventCollector.SendAllAlerts()
+
 	return nil
 }
 
-func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
+func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record, eventCollector *collector.EventCollector) error {
+
 	for _, record := range logFile.Records {
 		userIdentity, _ := record["userIdentity"].(map[string]interface{})
 
@@ -178,7 +184,9 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 				continue
 			}
 		case en == "ConsoleLogin":
-			continue
+			if userIdentity["type"] != "Root" {
+				continue
+			}
 		case strings.HasSuffix(en, "VirtualMFADevice"):
 			continue
 		case en == "CheckMfa":
@@ -316,6 +324,12 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 				continue
 			}
 
+		// ssm-guiconnect.amazonaws.com
+		case en == "CancelConnection":
+			if record["eventSource"] == "ssm-guiconnect.amazonaws.com" {
+				continue
+			}
+
 		// "logs.amazonaws.com"
 		case en == "FilterLogEvents":
 			if record["eventSource"] == "logs.amazonaws.com" {
@@ -341,6 +355,12 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 				}
 			}
 
+		// s3files.amazonaws.com
+		case en == "NewClientConnection":
+			if record["eventSource"] == "s3files.amazonaws.com" {
+				continue
+			}
+
 		// iam.amazonaws.com
 		case strings.HasPrefix(en, "AssumeRole"):
 			if record["userAgent"] == "Coral/Netty4" {
@@ -357,6 +377,12 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 				continue
 			}
 			if userIdentity["type"] == "AWSAccount" {
+				continue
+			}
+
+		// inspector2-telemetry.amazonaws.com
+		case en == "SendTelemetryEvent":
+			if record["eventSource"] == "inspector2-telemetry.amazonaws.com" {
 				continue
 			}
 
@@ -422,42 +448,84 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
 		if ec, ok := record["errorCode"].(string); ok {
 			errorCode = fmt.Sprintf(" - `%s`", ec)
 		}
+		eventTime, _ := time.Parse(time.RFC3339, record["eventTime"].(string))
 
-		// Not all records include the accountId in the userIdentity field.
-		// This was originally identified in cognito-idp:RespondToAuthChallenge
-		// It makes finding the event difficult, so this falls back to another place
-		// where accountId might be listed, making investigation easier
-		var recordAccount string
-		if accountId, ok := userIdentity["accountId"].(string); ok {
-			recordAccount = accountId
+		eventCollector.AddRecord(record, userName, eventName, errorCode, eventTime, eventRecord)
+		// sendAlert(currentGroup, eventRecord)
+	}
+
+	return nil
+}
+
+func sendAlert(group *collector.GroupedRecord, eventRecord handler.Record) {
+	record := group.Record
+	userName := group.UserName
+	errorCode := group.ErrorCode
+
+	// Not all records include the accountId in the userIdentity field.
+	// This was originally identified in cognito-idp:RespondToAuthChallenge
+	// It makes finding the event difficult, so this falls back to another place
+	// where accountId might be listed, making investigation easier
+	var recordAccount string
+	userIdentity, _ := record["userIdentity"].(map[string]interface{})
+	if accountId, ok := userIdentity["accountId"].(string); ok {
+		recordAccount = accountId
+	}
+
+	if recipientAccountId, ok := record["recipientAccountId"].(string); ok {
+		if record["eventSource"] == "cognito-idp.amazonaws.com" {
+			fmt.Sprintf("Fallback: %s", recipientAccountId)
+		} else {
+			recordAccount = recipientAccountId
+		}
+	}
+
+	eventTimeDisplay := group.FirstEventTime.Format("2006-01-02 15:04:05")
+	eventNameDisplay := fmt.Sprintf("*%s*", group.EventName)
+	cloudwatchUrl := fmt.Sprintf("https://us-east-1.console.aws.amazon.com/cloudtrailv2/home?region=%s#/events?EventId=%s",
+		record["awsRegion"],
+		record["eventID"])
+
+	if group.Count > 1 {
+		eventNameDisplay = fmt.Sprintf("%dx *%s*", group.Count, group.EventName)
+		if group.FirstEventTime.Day() == group.LastEventTime.Day() {
+			eventTimeDisplay = fmt.Sprintf("%s ... %s",
+				eventTimeDisplay,
+				group.LastEventTime.Format("15:04:05"))
+		} else {
+			eventTimeDisplay = fmt.Sprintf("%s ... %s",
+				eventTimeDisplay,
+				group.LastEventTime.Format("2006-01-02 15:04:05"))
 		}
 
-		if recipientAccountId, ok := record["recipientAccountId"].(string); ok {
-			if record["eventSource"] == "cognito-idp.amazonaws.com" {
-				fmt.Sprintf("Fallback: %s", recipientAccountId)
-			} else {
-				recordAccount = recipientAccountId
-			}
-		}
+		// CloudWatch URL with userName filter for grouped records
+		cloudwatchUrl = fmt.Sprintf("https://us-east-1.console.aws.amazon.com/cloudtrailv2/home?region=%s#/events?Username=%s&StartTime=%s&EndTime=%s",
+			record["awsRegion"],
+			userName,
+			group.FirstEventTime.Format(time.RFC3339),
+			group.LastEventTime.Format(time.RFC3339))
+	}
 
-		log.WithFields(log.Fields{
-			"user_agent":   record["userAgent"],
-			"event_time":   record["eventTime"],
-			"principal":    userIdentity["principalId"],
-			"user_name":    userName,
-			"event_source": record["eventSource"],
-			"event_name":   record["eventName"],
-			"account_id":   recordAccount,
-			"event_id":     record["eventID"],
-			"s3_uri":       fmt.Sprintf("s3://%s/%s", eventRecord.S3.Bucket.Name, eventRecord.S3.Object.Key),
-		}).Info("Event")
+	log.WithFields(log.Fields{
+		"user_agent":   record["userAgent"],
+		"event_time":   eventTimeDisplay,
+		"principal":    userIdentity["principalId"],
+		"user_name":    userName,
+		"event_source": record["eventSource"],
+		"event_name":   eventNameDisplay,
+		"count":        group.Count,
+		"account_id":   recordAccount,
+		"event_id":     record["eventID"],
+		"s3_uri":       fmt.Sprintf("s3://%s/%s", eventRecord.S3.Bucket.Name, eventRecord.S3.Object.Key),
+	}).Info("Event")
 
-		if webhookUrl, ok := os.LookupEnv("SLACK_WEBHOOK"); ok {
-			slackName := getEnv(
-				fmt.Sprintf("SLACK_NAME_%s", userIdentity["accountId"]),
-				getEnv("SLACK_NAME", fmt.Sprintf("%s", recordAccount)),
-			)
-			slackBody := fmt.Sprintf(`
+	if webhookUrl, ok := os.LookupEnv("SLACK_WEBHOOK"); ok {
+		slackName := getEnv(
+			fmt.Sprintf("SLACK_NAME_%s", userIdentity["accountId"]),
+			getEnv("SLACK_NAME", fmt.Sprintf("%s", recordAccount)),
+		)
+
+		slackBody := fmt.Sprintf(`
 {
   "channel": "%s",
   "text": "%s | %s | %s",
@@ -466,7 +534,7 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "*%s* - %s%s"
+        "text": "%s - %s%s"
       }
     },
     {
@@ -482,38 +550,34 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record) error {
         },
         {
           "type": "mrkdwn",
-          "text": "<https://console.aws.amazon.com/cloudtrail/home?region=%s#/events?EventId=%s|%s>"
+          "text": "<%s|%s>"
         }
       ]
     }
   ]
 }
 `,
-				os.Getenv("SLACK_CHANNEL"),
-				slackName,
-				record["eventName"],
-				userName,
-				record["eventName"],
-				record["eventSource"],
-				errorCode,
-				slackName,
-				userName,
-				record["awsRegion"],
-				record["eventID"],
-				record["eventTime"])
+			os.Getenv("SLACK_CHANNEL"),
+			slackName,
+			eventNameDisplay,
+			userName,
+			eventNameDisplay,
+			record["eventSource"],
+			errorCode,
+			slackName,
+			userName,
+			cloudwatchUrl,
+			eventTimeDisplay)
 
-			err := SendSlackNotification(webhookUrl, []byte(slackBody))
-			if err != nil {
-				log.Debugln(slackBody)
-				log.Debug(err)
-			}
+		err := SendSlackNotification(webhookUrl, []byte(slackBody))
+		if err != nil {
+			log.Debugln(slackBody)
+			log.Debug(err)
 		}
 	}
-	// log.Infof("Scanned %d records", len(logFile.Records))
-	return nil
 }
 
-func Stream(eventRecord handler.Record) error {
+func Stream(eventRecord handler.Record, eventCollector *collector.EventCollector) error {
 	s3ClientConfig := aws.NewConfig().WithRegion(eventRecord.AWSRegion)
 	s3Client := s3.New(session.Must(session.NewSession()), s3ClientConfig)
 	s3Bucket := eventRecord.S3.Bucket.Name
@@ -534,7 +598,7 @@ func Stream(eventRecord handler.Record) error {
 		return fmt.Errorf("%v: %v", s3Object, err)
 	}
 
-	err = FilterRecords(logFile, eventRecord)
+	err = FilterRecords(logFile, eventRecord, eventCollector)
 	if err != nil {
 		return fmt.Errorf("%v: %v", s3Object, err)
 	}
