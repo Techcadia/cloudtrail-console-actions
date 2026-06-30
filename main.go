@@ -358,12 +358,6 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record, eventCol
 				}
 			}
 
-		// s3files.amazonaws.com
-		case en == "NewClientConnection":
-			if record["eventSource"] == "s3files.amazonaws.com" {
-				continue
-			}
-
 		// iam.amazonaws.com
 		case strings.HasPrefix(en, "AssumeRole"):
 			if record["userAgent"] == "Coral/Netty4" {
