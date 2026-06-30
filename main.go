@@ -251,11 +251,14 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record, eventCol
 				}
 			}
 
-		// elasticfilesystem.amazonaws.com
+		// elasticfilesystem.amazonaws.com / s3files.amazonaws.com
 		case en == "NewClientConnection":
 			if record["eventSource"] == "elasticfilesystem.amazonaws.com" {
 				// We continue to get rate limited by slack for ANONYMOUS_PRINCIPAL's
 				// if userName != "" { continue } // ANONYMOUS_PRINCIPAL
+				continue
+			}
+			if record["eventSource"] == "s3files.amazonaws.com" {
 				continue
 			}
 
