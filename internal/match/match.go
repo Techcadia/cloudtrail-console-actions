@@ -101,7 +101,24 @@ func (c *Comparison) Eval(key any) bool {
 		return !equalScalar(key, c.scalar)
 
 	case AnyIn, AllIn, AnyNotIn, AllNotIn:
-		keys := keyList(key)
+		var keys []any
+		switch k := key.(type) {
+		case nil:
+			return c.op == AnyNotIn || c.op == AllNotIn
+		case []any:
+			keys = k
+		case []string:
+			keys = make([]any, len(k))
+			for i, s := range k {
+				keys[i] = s
+			}
+		default: // scalar — the overwhelmingly common case
+			in := c.inSet(key)
+			if c.op == AnyIn || c.op == AllIn {
+				return in
+			}
+			return !in
+		}
 		if len(keys) == 0 {
 			return c.op == AnyNotIn || c.op == AllNotIn
 		}
@@ -178,25 +195,6 @@ func (c *Comparison) inSet(key any) bool {
 		}
 	}
 	return false
-}
-
-// keyList normalizes the record-side key into a set: nil → empty,
-// scalar → singleton, array → its elements.
-func keyList(key any) []any {
-	switch k := key.(type) {
-	case nil:
-		return nil
-	case []any:
-		return k
-	case []string:
-		out := make([]any, len(k))
-		for i, s := range k {
-			out[i] = s
-		}
-		return out
-	default:
-		return []any{key}
-	}
 }
 
 func isScalar(v any) bool {
