@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://techcadia.dev/cloudtrail-console-actions/policy.schema.json",
+  "title": "CloudTrail Console Actions FilterPolicy",
+  "description": "Schema for the declarative filter policy that replaces hardcoded FilterRecords logic. Sugar (bare strings, bracket paths) is desugared before validation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "filters"],
+  "properties": {
+    "apiVersion": { "const": "cca/v1" },
+    "kind": { "const": "FilterPolicy" },
+    "preprocess": {
+      "type": "object",
+      "description": "Working variables (preprocess.*) computed before filtering.",
+      "additionalProperties": { "$ref": "#/$defs/outputField" }
+    },
+    "outputs": {
+      "type": "object",
+      "description": "Projection of an emitted record to the log/Slack schema.",
+      "additionalProperties": { "$ref": "#/$defs/outputField" }
+    },
+    "keep": {
+      "type": "array",
+      "description": "Global veto rules. An applicable keep rule forces EMIT, overriding any skip.",
+      "items": { "$ref": "#/$defs/keepRule" }
+    },
+    "filters": {
+      "type": "array",
+      "description": "Skip rules. A record is dropped if any applicable skip rule matches and no keep vetoes.",
+      "items": { "$ref": "#/$defs/filterRule" }
+    }
+  },
+
+  "$defs": {
+
+    "operator": {
+      "description": "Kyverno-aligned condition operators plus Matches/NotMatches (RE2). Numeric comparisons are kept for fields like length/count; duration operators are omitted (no time-based filtering need).",
+      "enum": [
+        "Equals", "NotEquals",
+        "AnyIn", "AllIn", "AnyNotIn", "AllNotIn",
+        "GreaterThan", "GreaterThanOrEquals", "LessThan", "LessThanOrEquals",
+        "Matches", "NotMatches"
+      ]
+    },
+
+    "scalar": {
+      "type": ["string", "number", "boolean"]
+    },
+
+    "condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "operator", "value"],
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "JMESPath expression in {{ }} resolved against the record and preprocess.*"
+        },
+        "operator": { "$ref": "#/$defs/operator" },
+        "value": {
+          "oneOf": [
+            { "$ref": "#/$defs/scalar" },
+            { "type": "array", "items": { "$ref": "#/$defs/scalar" }, "minItems": 1 }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "$comment": "Set operators require an array value.",
+          "if": {
+            "properties": { "operator": { "enum": ["AnyIn", "AllIn", "AnyNotIn", "AllNotIn", "Matches", "NotMatches"] } }
+          },
+          "then": {
+            "properties": { "value": { "type": "array" } }
+          }
+        },
+        {
+          "$comment": "Equality/comparison operators require a single scalar value.",
+          "if": {
+            "properties": { "operator": { "enum": ["Equals", "NotEquals", "GreaterThan", "GreaterThanOrEquals", "LessThan", "LessThanOrEquals"] } }
+          },
+          "then": {
+            "properties": { "value": { "$ref": "#/$defs/scalar" } }
+          }
+        }
+      ]
+    },
+
+    "conditions": {
+      "type": "object",
+      "description": "any: = OR, all: = AND. Both may appear and are ANDed together. Conditions do not nest (no all inside any); express AND-inside-OR by splitting into multiple rules.",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "any": { "type": "array", "items": { "$ref": "#/$defs/condition" }, "minItems": 1 },
+        "all": { "type": "array", "items": { "$ref": "#/$defs/condition" }, "minItems": 1 }
+      }
+    },
+
+    "filterRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "action", "match"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "action": {
+          "const": "skip",
+          "description": "All filter rules drop. Local exceptions go in exclude; global vetoes go in the top-level keep block."
+        },
+        "match": { "$ref": "#/$defs/conditions" },
+        "exclude": { "$ref": "#/$defs/conditions" }
+      }
+    },
+
+    "keepRule": {
+      "type": "object",
+      "description": "exclude is intentionally NOT permitted here, keeping the veto absolute and the policy terminating.",
+      "additionalProperties": false,
+      "required": ["name", "match"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "match": { "$ref": "#/$defs/conditions" }
+      }
+    },
+
+    "outputRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value"],
+      "properties": {
+        "when": { "$ref": "#/$defs/conditions" },
+        "value": { "type": "string", "description": "Template string, e.g. {{ userIdentity.userName }}" }
+      }
+    },
+
+    "outputField": {
+      "description": "Either an unconditional template string, or an ordered list of rules (first matching `when` wins).",
+      "oneOf": [
+        { "type": "string" },
+        { "type": "array", "items": { "$ref": "#/$defs/outputRule" }, "minItems": 1 }
+      ]
+    }
+  }
+}
