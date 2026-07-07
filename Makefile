@@ -2,7 +2,8 @@ ifndef ARCH
 override ARCH = arm64
 endif
 
-.PHONY: clean, build, zip
+.PHONY: default clean build zip test vet
+
 default: build
 
 clean:
@@ -11,13 +12,22 @@ clean:
 	@mkdir -p ./bin
 	@mkdir -p ./dist
 
+test:
+	go test ./...
+
+vet:
+	go vet ./...
+
 build: clean
 	GOOS=linux \
 	GOARCH=$(ARCH) \
+	CGO_ENABLED=0 \
 	go build \
 	-tags lambda.norpc \
+	-trimpath \
+	-ldflags "-s -w" \
 	-o ./bin/bootstrap \
-	main.go
+	./cmd/lambda
 
 zip: build
 	zip ./dist/function_$(ARCH).zip \
