@@ -1,11 +1,11 @@
 resource "aws_lambda_function" "default" {
-  filename                       = lookup(var.lambda, "filepath", "${path.module}/../../../../dist/function.zip")
-  source_code_hash               = filebase64sha256(lookup(var.lambda, "filepath", "${path.module}/../../../../dist/function.zip"))
+  filename                       = lookup(var.lambda, "filepath", "${path.module}/../../../../dist/function_arm64.zip")
+  source_code_hash               = filebase64sha256(lookup(var.lambda, "filepath", "${path.module}/../../../../dist/function_arm64.zip"))
   function_name                  = var.name
   handler                        = lookup(var.lambda, "handler", "main")
   runtime                        = lookup(var.lambda, "runtime", "provided.al2023")
   timeout                        = lookup(var.lambda, "timeout", 15)
-  memory_size                    = lookup(var.lambda, "memory", 128)
+  memory_size                    = lookup(var.lambda, "memory", 256)
   reserved_concurrent_executions = lookup(var.lambda, "reserved_concurrent_executions", 10)
   role                           = aws_iam_role.default.arn
   architectures                  = lookup(var.lambda, "architectures", ["arm64"])
@@ -26,6 +26,10 @@ resource "aws_lambda_function" "default" {
       "Name" = var.name
     }
   )
+
+  # Ensure the managed log group exists before the function can be invoked;
+  # the role no longer has logs:CreateLogGroup to auto-create it.
+  depends_on = [aws_cloudwatch_log_group.default]
 }
 
 resource "aws_lambda_permission" "default" {

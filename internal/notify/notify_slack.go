@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/Techcadia/cloudtrail-console-actions/internal/collector"
@@ -53,9 +54,13 @@ func (s *Slack) Send(g *collector.Group) error {
 	userName := outputStr(g, "user_name", g.UserName)
 	eventName := fmt.Sprintf("*%s*", g.EventName)
 	timeDisplay := g.First.Format("2006-01-02 15:04:05")
-	url := fmt.Sprintf(
+	region := url.QueryEscape(outputStr(g, "aws_region", ""))
+	// userName and the timestamps carry ':' '@' '+' and spaces (assumed-role
+	// and SSO principals especially), which must be escaped or the console
+	// deep link breaks.
+	link := fmt.Sprintf(
 		"https://us-east-1.console.aws.amazon.com/cloudtrailv2/home?region=%s#/events?EventId=%s",
-		outputStr(g, "aws_region", ""), outputStr(g, "event_id", ""))
+		region, url.QueryEscape(outputStr(g, "event_id", "")))
 
 	if g.Count > 1 {
 		eventName = fmt.Sprintf("%dx *%s*", g.Count, g.EventName)
@@ -64,10 +69,10 @@ func (s *Slack) Send(g *collector.Group) error {
 		} else {
 			timeDisplay = fmt.Sprintf("%s ... %s", timeDisplay, g.Last.Format("2006-01-02 15:04:05"))
 		}
-		url = fmt.Sprintf(
+		link = fmt.Sprintf(
 			"https://us-east-1.console.aws.amazon.com/cloudtrailv2/home?region=%s#/events?Username=%s&StartTime=%s&EndTime=%s",
-			outputStr(g, "aws_region", ""), userName,
-			g.First.Format(time.RFC3339), g.Last.Format(time.RFC3339))
+			region, url.QueryEscape(userName),
+			url.QueryEscape(g.First.Format(time.RFC3339)), url.QueryEscape(g.Last.Format(time.RFC3339)))
 	}
 
 	errorCode := ""
@@ -91,7 +96,7 @@ func (s *Slack) Send(g *collector.Group) error {
 				Elements: []mrkdwn{
 					{Type: "mrkdwn", Text: name},
 					{Type: "mrkdwn", Text: userName},
-					{Type: "mrkdwn", Text: fmt.Sprintf("<%s|%s>", url, timeDisplay)},
+					{Type: "mrkdwn", Text: fmt.Sprintf("<%s|%s>", link, timeDisplay)},
 				},
 			},
 		},

@@ -92,7 +92,7 @@ outputs:               # projection of emitted records to the log/Slack schema
   user_name:  "{{ preprocess.userName }}"
 ```
 
-**Expressions** are `{{ ... }}` templates: dotted paths into the record, `[n]` indexing, `|| ''` fallback for optional fields, and the functions `trimPrefix(s, prefix)`, `contains(s, substr)`, `split(s, sep)`.
+**Expressions** are `{{ ... }}` templates: dotted paths into the record, `[n]` indexing, `|| ''` fallback for optional fields, and the functions `trimPrefix(s, prefix)`, `contains(s, substr)`, `split(s, sep)`. This is a small custom language, **not JMESPath** — an unresolvable path evaluates to `null` (falsy) rather than erroring, so a typo reads as an always-false rule. See [docs/policy-language.md](./docs/policy-language.md) for the full grammar and falsy semantics.
 
 **Operators:**
 
@@ -157,7 +157,7 @@ The embedded policy is a golden-tested port of the v1 (v0.3.2) ruleset — a cor
 * **keep rules** — `DeleteTrail`, `StopLogging`, `PutUserPolicy`, `DeleteFlowLogs` and `UpdateTrail` are always emitted, even from non-console user agents that v1 dropped.
 * **deduplication** is configurable (`CCA_DEDUPE`), and flush order is deterministic.
 
-The `Event` log contract (`msg == "Event"`, field names) and all `SLACK_*` variables are unchanged. `logrus`-style lowercase `"level":"info"` is now slog-style `"level":"INFO"`.
+The `Event` log contract (`msg == "Event"`, field names) and all `SLACK_*` variables are unchanged. `logrus`-style lowercase `"level":"info"` is now slog-style `"level":"INFO"`. See the [CHANGELOG](./CHANGELOG.md) for the full list of changes.
 
 ## Cost
 
@@ -173,6 +173,10 @@ Depending on the size of your AWS organization you may receive a LOT of CloudTra
 
 ### Timeouts
 
-The default Terraform Lambda timeout is 3 seconds. If executions hit the timeout, raise memory from 128 to 256 or 512 — CPU scales with memory.
+The Terraform module defaults the Lambda timeout to 15 seconds and memory to 256 MB. If executions hit the timeout, raise memory to 512 — CPU scales with memory.
 
 ![](./docs/assets/lambda-timeout-2022-02-06.png?raw=true)
+
+## License
+
+[MIT](./LICENSE)

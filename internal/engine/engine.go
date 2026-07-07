@@ -195,16 +195,22 @@ func (e *Engine) evaluate(record map[string]any, tr *tracer) Decision {
 		}
 		matched, why := r.match.eval(scope, tr != nil)
 		if !matched {
-			tr.logf("skip rule %q did not match: %s", r.name, why)
+			if tr != nil {
+				tr.logf("skip rule %q did not match: %s", r.name, why)
+			}
 			continue
 		}
 		if r.exclude != nil {
 			if excluded, exWhy := r.exclude.eval(scope, tr != nil); excluded {
-				tr.logf("skip rule %q matched (%s) but was carved out by exclude: %s", r.name, why, exWhy)
+				if tr != nil {
+					tr.logf("skip rule %q matched (%s) but was carved out by exclude: %s", r.name, why, exWhy)
+				}
 				continue
 			}
 		}
-		tr.logf("skip rule %q matched: %s", r.name, why)
+		if tr != nil {
+			tr.logf("skip rule %q matched: %s", r.name, why)
+		}
 		if d.DroppedBy == "" {
 			d.DroppedBy = r.name
 		}
@@ -216,11 +222,15 @@ func (e *Engine) evaluate(record map[string]any, tr *tracer) Decision {
 			r := &e.keep[i]
 			matched, why := r.match.eval(scope, tr != nil)
 			if matched {
-				tr.logf("keep rule %q matched: %s — veto, record emitted despite %q", r.name, why, d.DroppedBy)
+				if tr != nil {
+					tr.logf("keep rule %q matched: %s — veto, record emitted despite %q", r.name, why, d.DroppedBy)
+				}
 				d.KeptBy = r.name
 				break
 			}
-			tr.logf("keep rule %q did not match: %s", r.name, why)
+			if tr != nil {
+				tr.logf("keep rule %q did not match: %s", r.name, why)
+			}
 		}
 	}
 
@@ -231,8 +241,10 @@ func (e *Engine) evaluate(record map[string]any, tr *tracer) Decision {
 			f := &e.outputs[i]
 			d.Outputs[f.name] = f.eval(scope)
 		}
-		tr.logf("decision: EMIT")
-	} else {
+		if tr != nil {
+			tr.logf("decision: EMIT")
+		}
+	} else if tr != nil {
 		tr.logf("decision: DROP by rule %q", d.DroppedBy)
 	}
 	return d

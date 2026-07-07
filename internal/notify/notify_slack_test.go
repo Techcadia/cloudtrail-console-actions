@@ -140,6 +140,30 @@ func TestSlackErrorCodeDisplay(t *testing.T) {
 
 // Custom policies may omit slack-facing outputs; the sink degrades instead
 // of panicking.
+func TestSlackEncodesURLParams(t *testing.T) {
+	srv, bodies := slackServer(t, "ok")
+	s := &Slack{
+		WebhookURL: srv.URL,
+		HTTPClient: srv.Client(),
+		LookupEnv:  func(string) (string, bool) { return "", false },
+	}
+	// Assumed-role / SSO principals carry ':' and '@', which must be escaped
+	// or the console deep link breaks.
+	g := group(3)
+	g.Outputs["user_name"] = "AROAEXAMPLE:jane@example.com"
+	if err := s.Send(g); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	raw := string((*bodies)[0])
+	if !strings.Contains(raw, "Username=AROAEXAMPLE%3Ajane%40example.com") {
+		t.Errorf("username not URL-encoded in deep link:\n%s", raw)
+	}
+	if strings.Contains(raw, "Username=AROAEXAMPLE:jane@example.com") {
+		t.Errorf("raw unescaped username leaked into deep link:\n%s", raw)
+	}
+}
+
 func TestSlackToleratesMissingOutputs(t *testing.T) {
 	srv, _ := slackServer(t, "ok")
 	s := &Slack{

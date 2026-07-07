@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -45,6 +46,15 @@ func (a *App) processObject(ctx context.Context, src event.Record, col *collecto
 
 	file, err := trail.Fetch(ctx, a.NewObjectGetter(src.AWSRegion), bucket, key)
 	if err != nil {
+		// A poison object (not a CloudTrail log file) must not fail the whole
+		// invocation — async retries would reprocess it forever. Log and skip;
+		// only genuine fetch errors (S3/network) propagate.
+		if errors.Is(err, trail.ErrMalformed) {
+			a.Logger.LogAttrs(ctx, slog.LevelWarn, "skipping unparseable object",
+				slog.String("bucket", bucket), slog.String("key", key),
+				slog.String("error", err.Error()))
+			return nil
+		}
 		return err
 	}
 	if file == nil { // housekeeping object (digest/config)
@@ -82,7 +92,12 @@ func (a *App) processRecord(ctx context.Context, record map[string]any, src even
 		return
 	}
 
-	eventTime, _ := time.Parse(time.RFC3339, str(record["eventTime"]))
+	eventTime, err := time.Parse(time.RFC3339, str(record["eventTime"]))
+	if err != nil {
+		a.Logger.LogAttrs(ctx, slog.LevelWarn, "unparseable eventTime; using zero time",
+			slog.Any("event_id", record["eventID"]),
+			slog.Any("event_time", record["eventTime"]))
+	}
 	errorCode, _ := record["errorCode"].(string)
 	col.Add(collector.Entry{
 		Record:    record,

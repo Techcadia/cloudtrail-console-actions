@@ -122,3 +122,32 @@ func TestPerformanceBudget(t *testing.T) {
 		t.Errorf("evaluation cost %v/record exceeds budget %v", perRecord, budget)
 	}
 }
+
+// TestAllocationBudget guards the per-record allocation count, which the
+// time-based budget above (100x headroom) is far too coarse to catch. The
+// emit path settles around ~11 allocs/op; a regression that reintroduces
+// per-comparison ParseFloat or disabled-tracer boxing pushes it back toward
+// the hundreds. The ceiling has ~3x headroom so it isn't noisy.
+func TestAllocationBudget(t *testing.T) {
+	if testing.Short() {
+		t.Skip("short mode")
+	}
+	eng := compileDefault(t)
+
+	for _, tc := range []struct {
+		name    string
+		record  map[string]any
+		ceiling float64
+	}{
+		{"emit", benchEmit, 32},
+		{"drop-early", benchDropEarly, 32},
+		{"drop-late", benchDropLate, 32},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := testing.AllocsPerRun(200, func() { eng.Evaluate(tc.record) })
+			if got > tc.ceiling {
+				t.Errorf("%s: %.0f allocs/record exceeds ceiling %.0f", tc.name, got, tc.ceiling)
+			}
+		})
+	}
+}

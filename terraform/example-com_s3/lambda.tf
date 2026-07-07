@@ -1,5 +1,5 @@
 module "default" {
-  source = "../modules/cloudtrailconsole"
+  source = "../modules/cloudtrailconsole/s3"
   name   = "cloudTrailConsole"
 
   s3 = {
@@ -8,12 +8,13 @@ module "default" {
 
   lambda = {
     # **Note**: Increase memory if you are experiencing slow s3 reads"
-    memory                         = 128
+    memory                         = 256
     timeout                        = 15
     reserved_concurrent_executions = 10
+    log_retention_in_days          = 90
     environment_variables          = {}
     # **Note**: Depending on your Terraform directory structure you might need to define the filepath.
-    filepath = "../../../cloudtrail-console-actions/dist/function.zip"
+    filepath = "../../../cloudtrail-console-actions/dist/function_arm64.zip"
   }
 
   # slack does not need to be defined for cloudwatch logs to be emitted

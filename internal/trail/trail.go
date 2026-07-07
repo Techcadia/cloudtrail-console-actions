@@ -7,6 +7,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -14,6 +15,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
+
+// ErrMalformed marks an object whose bytes could not be gunzipped or decoded
+// as a CloudTrail log file — a poison object the caller should log and skip
+// rather than fail the whole invocation on (which would retry indefinitely).
+var ErrMalformed = errors.New("malformed log file")
 
 // File is a decoded CloudTrail log file.
 type File struct {
@@ -69,7 +75,7 @@ func Decode(r io.Reader) (*File, error) {
 	if len(magic) == 2 && magic[0] == 0x1f && magic[1] == 0x8b {
 		gz, err := gzip.NewReader(buffered)
 		if err != nil {
-			return nil, fmt.Errorf("extracting gzipped log file: %w", err)
+			return nil, fmt.Errorf("extracting gzipped log file: %w: %w", ErrMalformed, err)
 		}
 		defer gz.Close()
 		body = gz
@@ -77,7 +83,7 @@ func Decode(r io.Reader) (*File, error) {
 
 	var file File
 	if err := json.NewDecoder(body).Decode(&file); err != nil {
-		return nil, fmt.Errorf("decoding CloudTrail log file: %w", err)
+		return nil, fmt.Errorf("decoding CloudTrail log file: %w: %w", ErrMalformed, err)
 	}
 	return &file, nil
 }

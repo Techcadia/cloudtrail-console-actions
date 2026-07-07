@@ -24,31 +24,16 @@ resource "aws_iam_role" "default" {
 }
 
 data "aws_iam_policy_document" "default" {
-  statement {
-    actions = [
-      "logs:CreateLogGroup",
-    ]
-    resources = [
-      "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:/aws/lambda/${var.name}",
-    ]
-  }
-
+  # The log group itself is created by aws_cloudwatch_log_group.default (with a
+  # managed retention), so the role only needs to write streams — not create
+  # the group.
   statement {
     actions = [
       "logs:CreateLogStream",
       "logs:PutLogEvents",
     ]
     resources = [
-      "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${var.name}:log-stream:*",
-    ]
-  }
-
-  statement {
-    actions = [
-      "s3:ListBucket"
-    ]
-    resources = [
-      data.aws_s3_bucket.default.arn
+      "${aws_cloudwatch_log_group.default.arn}:*",
     ]
   }
 

@@ -29,10 +29,11 @@ variable "lambda" {
   description = "Lambda Settings"
   type        = any
   default = {
-    # **Note**: Raise this if you have failed s3 loads"
-    # memory                         = 128
+    # **Note**: Raise memory if you have slow/failed s3 loads"
+    # memory                         = 256
     # timeout                        = 15
     # reserved_concurrent_executions = 10
+    # log_retention_in_days          = 90
     # environment_variables          = {}
   }
 }

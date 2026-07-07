@@ -91,6 +91,42 @@ func TestHandleDedupes(t *testing.T) {
 	}
 }
 
+// poisonGetter returns bytes that are neither gzip nor valid JSON.
+type poisonGetter struct{}
+
+func (poisonGetter) GetObject(context.Context, *s3.GetObjectInput, ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
+	return &s3.GetObjectOutput{Body: io.NopCloser(strings.NewReader("this is not a cloudtrail file"))}, nil
+}
+
+func TestHandleSkipsPoisonObject(t *testing.T) {
+	eng, err := engine.Compile(policy.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	var alerts []*collector.Group
+	a := &App{
+		Engine:          eng,
+		Logger:          logger,
+		Dedupe:          true,
+		NewObjectGetter: func(string) trail.ObjectGetter { return poisonGetter{} },
+		Alert:           func(g *collector.Group) { alerts = append(alerts, g) },
+	}
+
+	// A poison object must not fail the invocation (which would retry forever)
+	// — it is logged and skipped.
+	if err := a.Handle(context.Background(), s3Event()); err != nil {
+		t.Fatalf("poison object failed the invocation: %v", err)
+	}
+	if len(alerts) != 0 {
+		t.Errorf("alerts = %d, want 0", len(alerts))
+	}
+	if !strings.Contains(buf.String(), "skipping unparseable object") {
+		t.Errorf("no warning logged for poison object:\n%s", buf.String())
+	}
+}
+
 func TestHandleDedupeDisabled(t *testing.T) {
 	var alerts []*collector.Group
 	a := newTestApp(t, nil, false, &alerts)

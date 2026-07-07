@@ -247,10 +247,26 @@ func toNumber(v any) (float64, bool) {
 	case float64:
 		return n, true
 	case string:
+		// ParseFloat allocates a *NumError on every failed parse; skip it for
+		// the common non-numeric string, which backs almost every comparison.
+		if !looksNumeric(n) {
+			return 0, false
+		}
 		f, err := strconv.ParseFloat(n, 64)
 		return f, err == nil
 	}
 	return 0, false
+}
+
+// looksNumeric reports whether s begins like a float (digit, sign, or '.'). It
+// deliberately rejects the "inf"/"nan" forms ParseFloat also accepts — they
+// don't occur in CloudTrail data and the golden corpus guards the difference.
+func looksNumeric(s string) bool {
+	if s == "" {
+		return false
+	}
+	c := s[0]
+	return c == '-' || c == '+' || c == '.' || (c >= '0' && c <= '9')
 }
 
 // ---- wildcards ----

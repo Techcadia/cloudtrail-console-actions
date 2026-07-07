@@ -176,6 +176,7 @@ func TestCompileErrors(t *testing.T) {
 		{"dangling or", "{{ eventSource || }}"},
 		{"missing close paren", "{{ contains(eventName, ':' }}"},
 		{"non-integer index", "{{ split(eventName, ':')[x] }}"},
+		{"overflowing index", "{{ split(eventName, ':')[99999999999999999999] }}"},
 		{"trailing garbage", "{{ eventSource eventName }}"},
 		{"wrong arity", "{{ contains(eventName) }}"},
 	}

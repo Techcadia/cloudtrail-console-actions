@@ -15,6 +15,7 @@ package expr
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -355,9 +356,10 @@ func (p *parser) parseInt() (int, error) {
 	if p.pos == start {
 		return 0, fmt.Errorf("expected integer index at offset %d", p.pos)
 	}
-	n := 0
-	for _, c := range p.input[start:p.pos] {
-		n = n*10 + int(c-'0')
+	// Atoi reports overflow instead of silently wrapping like a manual accumulator.
+	n, err := strconv.Atoi(p.input[start:p.pos])
+	if err != nil {
+		return 0, fmt.Errorf("invalid integer index %q at offset %d: %w", p.input[start:p.pos], start, err)
 	}
 	return n, nil
 }

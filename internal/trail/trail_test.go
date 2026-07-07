@@ -51,14 +51,16 @@ func TestDecodeGzip(t *testing.T) {
 }
 
 func TestDecodeErrors(t *testing.T) {
-	if _, err := Decode(strings.NewReader("not json")); err == nil {
-		t.Error("plain garbage: want error")
+	// Content errors must wrap ErrMalformed so the caller can skip poison
+	// objects instead of failing (and endlessly retrying) the invocation.
+	if _, err := Decode(strings.NewReader("not json")); err == nil || !errors.Is(err, ErrMalformed) {
+		t.Errorf("plain garbage: want ErrMalformed, got %v", err)
 	}
-	if _, err := Decode(bytes.NewReader([]byte{0x1f, 0x8b, 0x00})); err == nil {
-		t.Error("truncated gzip: want error")
+	if _, err := Decode(bytes.NewReader([]byte{0x1f, 0x8b, 0x00})); err == nil || !errors.Is(err, ErrMalformed) {
+		t.Errorf("truncated gzip: want ErrMalformed, got %v", err)
 	}
-	if _, err := Decode(strings.NewReader("")); err == nil {
-		t.Error("empty input: want error")
+	if _, err := Decode(strings.NewReader("")); err == nil || !errors.Is(err, ErrMalformed) {
+		t.Errorf("empty input: want ErrMalformed, got %v", err)
 	}
 }
 
