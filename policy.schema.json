@@ -34,7 +34,7 @@
   "$defs": {
 
     "operator": {
-      "description": "Kyverno-aligned condition operators plus Matches/NotMatches (RE2). Numeric comparisons are kept for fields like length/count; duration operators are omitted (no time-based filtering need).",
+      "description": "Condition operators plus Matches/NotMatches (RE2). Numeric comparisons are kept for fields like length/count; duration operators are omitted (no time-based filtering need).",
       "enum": [
         "Equals", "NotEquals",
         "AnyIn", "AllIn", "AnyNotIn", "AllNotIn",

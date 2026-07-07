@@ -1,47 +1,24 @@
-// Package notify delivers alerts for collected event groups: a structured
-// "Event" log line for CloudWatch, and optionally a Slack message.
 package notify
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
-	"maps"
 	"net/http"
-	"slices"
 	"time"
 
 	"github.com/Techcadia/cloudtrail-console-actions/internal/collector"
 )
 
-// LogSink writes one structured "Event" line per group. Field names are the
-// policy's outputs keys, so existing CloudWatch queries
-// (filter msg == "Event") keep working.
-type LogSink struct {
-	Logger *slog.Logger
-}
-
-// Send logs the group's outputs plus count and s3_uri.
-func (l *LogSink) Send(g *collector.Group) {
-	attrs := make([]slog.Attr, 0, len(g.Outputs)+2)
-	for _, k := range slices.Sorted(maps.Keys(g.Outputs)) {
-		attrs = append(attrs, slog.Any(k, g.Outputs[k]))
-	}
-	attrs = append(attrs,
-		slog.Int("count", g.Count),
-		slog.String("s3_uri", s3URI(g)),
-	)
-	l.Logger.LogAttrs(context.Background(), slog.LevelInfo, "Event", attrs...)
-}
-
-func s3URI(g *collector.Group) string {
-	return fmt.Sprintf("s3://%s/%s", g.Source.S3.Bucket.Name, g.Source.S3.Object.Key)
-}
-
 // Slack posts one message per group to an incoming webhook.
+//
+// The message renders entirely from the policy's outputs: projection — the
+// documented keys are event_source, user_name, account_id,
+// identity_account_id, error_code, event_id and aws_region — plus the group
+// metadata (count, time window, and the preprocess-derived user/event names
+// used for grouping). Override those output fields in the policy to change
+// what Slack shows.
 type Slack struct {
 	WebhookURL string
 	Channel    string
@@ -58,8 +35,8 @@ type payload struct {
 }
 
 type block struct {
-	Type     string  `json:"type"`
-	Text     *mrkdwn `json:"text,omitempty"`
+	Type     string   `json:"type"`
+	Text     *mrkdwn  `json:"text,omitempty"`
 	Elements []mrkdwn `json:"elements,omitempty"`
 }
 
@@ -73,11 +50,12 @@ type mrkdwn struct {
 // cannot break the JSON.
 func (s *Slack) Send(g *collector.Group) error {
 	name := s.displayName(g)
+	userName := outputStr(g, "user_name", g.UserName)
 	eventName := fmt.Sprintf("*%s*", g.EventName)
 	timeDisplay := g.First.Format("2006-01-02 15:04:05")
 	url := fmt.Sprintf(
-		"https://us-east-1.console.aws.amazon.com/cloudtrailv2/home?region=%v#/events?EventId=%v",
-		g.Record["awsRegion"], g.Record["eventID"])
+		"https://us-east-1.console.aws.amazon.com/cloudtrailv2/home?region=%s#/events?EventId=%s",
+		outputStr(g, "aws_region", ""), outputStr(g, "event_id", ""))
 
 	if g.Count > 1 {
 		eventName = fmt.Sprintf("%dx *%s*", g.Count, g.EventName)
@@ -87,32 +65,32 @@ func (s *Slack) Send(g *collector.Group) error {
 			timeDisplay = fmt.Sprintf("%s ... %s", timeDisplay, g.Last.Format("2006-01-02 15:04:05"))
 		}
 		url = fmt.Sprintf(
-			"https://us-east-1.console.aws.amazon.com/cloudtrailv2/home?region=%v#/events?Username=%v&StartTime=%s&EndTime=%s",
-			g.Record["awsRegion"], g.UserName,
+			"https://us-east-1.console.aws.amazon.com/cloudtrailv2/home?region=%s#/events?Username=%s&StartTime=%s&EndTime=%s",
+			outputStr(g, "aws_region", ""), userName,
 			g.First.Format(time.RFC3339), g.Last.Format(time.RFC3339))
 	}
 
 	errorCode := ""
-	if g.ErrorCode != "" {
-		errorCode = fmt.Sprintf(" - `%s`", g.ErrorCode)
+	if ec := outputStr(g, "error_code", ""); ec != "" {
+		errorCode = fmt.Sprintf(" - `%s`", ec)
 	}
 
 	msg := payload{
 		Channel: s.Channel,
-		Text:    fmt.Sprintf("%s | %s | %s", name, eventName, g.UserName),
+		Text:    fmt.Sprintf("%s | %s | %s", name, eventName, userName),
 		Blocks: []block{
 			{
 				Type: "section",
 				Text: &mrkdwn{
 					Type: "mrkdwn",
-					Text: fmt.Sprintf("%s - %v%s", eventName, g.Outputs["event_source"], errorCode),
+					Text: fmt.Sprintf("%s - %s%s", eventName, outputStr(g, "event_source", ""), errorCode),
 				},
 			},
 			{
 				Type: "context",
 				Elements: []mrkdwn{
 					{Type: "mrkdwn", Text: name},
-					{Type: "mrkdwn", Text: g.UserName},
+					{Type: "mrkdwn", Text: userName},
 					{Type: "mrkdwn", Text: fmt.Sprintf("<%s|%s>", url, timeDisplay)},
 				},
 			},
@@ -126,19 +104,23 @@ func (s *Slack) Send(g *collector.Group) error {
 	return s.post(body)
 }
 
-// displayName resolves the account label: SLACK_NAME_<accountId> beats
-// SLACK_NAME beats the raw account id from the outputs.
+// displayName resolves the account label: SLACK_NAME_<identity_account_id>
+// beats SLACK_NAME beats the account_id output.
 func (s *Slack) displayName(g *collector.Group) string {
-	fallback := fmt.Sprintf("%v", g.Outputs["account_id"])
-	identityAccount := ""
-	if ui, ok := g.Record["userIdentity"].(map[string]any); ok {
-		identityAccount, _ = ui["accountId"].(string)
-	}
-	if v, ok := s.LookupEnv("SLACK_NAME_" + identityAccount); ok && v != "" {
+	if v, ok := s.LookupEnv("SLACK_NAME_" + outputStr(g, "identity_account_id", "")); ok && v != "" {
 		return v
 	}
 	if v, ok := s.LookupEnv("SLACK_NAME"); ok && v != "" {
 		return v
+	}
+	return outputStr(g, "account_id", "")
+}
+
+// outputStr reads one projection field, tolerating custom policies that omit
+// it.
+func outputStr(g *collector.Group, key, fallback string) string {
+	if v, ok := g.Outputs[key]; ok && v != nil {
+		return fmt.Sprintf("%v", v)
 	}
 	return fallback
 }

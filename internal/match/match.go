@@ -1,5 +1,5 @@
 // Package match implements the condition operators of a FilterPolicy:
-// Kyverno-aligned equality, set membership with * and ? wildcards, numeric
+// exact equality, set membership with * and ? wildcards, numeric
 // comparisons, and RE2 Matches/NotMatches. Policy values are compiled once
 // (wildcards classified, regexes built) so per-record evaluation is cheap and
 // cannot fail.

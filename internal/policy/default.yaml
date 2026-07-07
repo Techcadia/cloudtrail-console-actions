@@ -1,8 +1,8 @@
 # CloudTrail Console Actions — default filter policy
 # Faithful translation of the v1 `FilterRecords` ruleset (v0.3.2), baked into
 # the binary. Override with --config-file or CCA_POLICY_FILE.
-# Grammar is Kyverno-shaped: {key, operator, value} conditions grouped under
-# any:/all: blocks. Expressions in {{ }}; use `|| ''` for optional fields.
+# Rules are {key, operator, value} conditions grouped under any:/all: blocks.
+# Expressions in {{ }}; use `|| ''` for optional fields.
 #
 # ─────────────────────────────────────────────────────────────────────────────
 # EVALUATION SEMANTICS (per CloudTrail record)
@@ -386,15 +386,23 @@ filters:
           value: ['console\..*\.amazonaws\.com', 'signin\..*\.amazonaws\.com', '(?i)aws[\s-]internal']
 
 # ── Stage 3: emitted projection ──────────────────────────────────────────────
+# Every field lands on the "Event" log line. The Slack notifier reads the
+# documented keys: event_source, event_name, user_name, account_id,
+# identity_account_id, error_code, event_id and aws_region — override them
+# here to change what notifications show.
 outputs:
   event_source: "{{ eventSource }}"
   event_name:   "{{ eventName }}"          # raw record field — NOT the trimmed preprocess.eventName
   event_time:   "{{ eventTime }}"
   event_id:     "{{ eventID }}"
+  aws_region:   "{{ awsRegion }}"
   principal:    "{{ userIdentity.principalId }}"
   user_agent:   "{{ userAgent }}"
   user_name:    "{{ preprocess.userName }}"
   error_code:   "{{ errorCode || '' }}"
+
+  # SLACK_NAME_<accountId> lookups key on the identity's own account.
+  identity_account_id: "{{ userIdentity.accountId || '' }}"
 
   # v1: cognito-idp keeps userIdentity.accountId (the recipientAccountId
   # branch there is a discarded fmt.Sprintf — a dead no-op). Everything else
