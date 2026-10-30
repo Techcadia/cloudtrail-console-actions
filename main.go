@@ -35,7 +35,7 @@ func init() {
 
 func main() {
 	log.SetFormatter(&log.JSONFormatter{})
-	log.Info("Starting v0.3.2")
+	log.Info("Starting v0.3.3")
 	lambda.Start(Handler)
 }
 
@@ -92,6 +92,15 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record, eventCol
 		// codecommit.amazonaws.com
 		if record["eventSource"] == "codecommit.amazonaws.com" {
 			continue
+		}
+
+		// cognito-idp.amazonaws.com
+		if record["eventSource"] == "cognito-idp.amazonaws.com" {
+			// There is no current way to correlate these events to a specific user or account.
+			if _, ok := userIdentity["accountId"]; (len(userIdentity) == 1 && ok) ||
+				userIdentity["type"] == "Unknown" {
+				continue
+			}
 		}
 
 		// billingconsole.amazonaws.com
@@ -268,6 +277,7 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record, eventCol
 				continue
 			}
 
+		// sso.amazonaws.com
 		case en == "Federate":
 			if record["eventSource"] == "sso.amazonaws.com" {
 				continue
@@ -282,6 +292,14 @@ func FilterRecords(logFile *CloudTrailFile, eventRecord handler.Record, eventCol
 			}
 
 		//signin.amazonaws.com
+		case en == "CredentialChallenge":
+			if record["eventSource"] == "signin.amazonaws.com" {
+				continue
+			}
+		case en == "CredentialVerification":
+			if record["eventSource"] == "signin.amazonaws.com" {
+				continue
+			}
 		case en == "UserAuthentication":
 			if record["eventSource"] == "signin.amazonaws.com" {
 				if aed, ok := record["additionalEventData"].(map[string]interface{}); ok {
@@ -518,7 +536,7 @@ func sendAlert(group *collector.GroupedRecord, eventRecord handler.Record) {
 
 	if webhookUrl, ok := os.LookupEnv("SLACK_WEBHOOK"); ok {
 		slackName := getEnv(
-			fmt.Sprintf("SLACK_NAME_%s", userIdentity["accountId"]),
+			fmt.Sprintf("SLACK_NAME_%s", recordAccount),
 			getEnv("SLACK_NAME", fmt.Sprintf("%s", recordAccount)),
 		)
 
