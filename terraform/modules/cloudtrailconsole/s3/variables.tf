@@ -37,6 +37,18 @@ variable "lambda" {
   }
 }
 
+variable "logs" {
+  description = "Log group settings"
+  type = object({
+    create            = optional(bool, false)
+    retention_in_days = optional(number, 30)
+    skip_destroy      = optional(bool, false)
+    log_group_class   = optional(string, "STANDARD")
+    kms_key_id        = optional(string)
+  })
+  default = {}
+}
+
 variable "tags" {
   description = "A mapping of tags to supply to the resources"
   type        = map(string)
