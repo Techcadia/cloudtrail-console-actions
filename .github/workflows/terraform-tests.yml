@@ -48,9 +48,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
-          terraform_version: "1.15.8"
           terraform_wrapper: false
       - name: terraform init and test
         working-directory: terraform/modules/cloudtrailconsole/${{ matrix.module }}

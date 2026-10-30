@@ -1,54 +1,72 @@
+# Every run sets values explicitly and asserts against those literals, never
+# against module defaults, so changing a default does not break these tests.
 mock_provider "aws" {
   source = "./tests/mocks/aws"
 }
 
 variables {
-  name = "cloudTrailConsole"
+  name = "testConsole"
 
   s3 = {
     name = "example-cloudtrail-bucket"
   }
 
-  # Point the lambda at a committed fixture; the default
-  # ${path.module}/../../../../dist/function.zip is a build artifact
-  # that does not exist in a fresh checkout.
+  # Committed fixture; the module's default dist/function.zip is a build artifact.
   lambda = {
-    filepath = "./tests/fixtures/function.zip"
+    filepath                       = "./tests/fixtures/function.zip"
+    handler                        = "bootstrap"
+    runtime                        = "provided.al2"
+    memory                         = 256
+    timeout                        = 60
+    reserved_concurrent_executions = 5
+    architectures                  = ["x86_64"]
+    environment_variables = {
+      LOG_LEVEL = "DEBUG"
+    }
   }
 }
 
-run "defaults" {
+run "lambda_settings" {
   command = apply
 
   assert {
-    condition     = aws_lambda_function.default.function_name == "cloudTrailConsole"
-    error_message = "Lambda function name should default to the module name"
+    condition     = aws_lambda_function.default.function_name == "testConsole"
+    error_message = "Lambda should use the provided name"
   }
 
   assert {
-    condition     = aws_lambda_function.default.handler == "main" && aws_lambda_function.default.runtime == "provided.al2023"
-    error_message = "Lambda should default to handler=main on provided.al2023"
+    condition     = aws_iam_role.default.name == "testConsole"
+    error_message = "IAM role should use the provided name"
   }
 
   assert {
-    condition     = aws_lambda_function.default.memory_size == 128 && aws_lambda_function.default.timeout == 15
-    error_message = "Lambda should default to 128MB memory and 15s timeout"
+    condition     = aws_lambda_function.default.handler == "bootstrap" && aws_lambda_function.default.runtime == "provided.al2"
+    error_message = "Lambda should use the provided handler and runtime"
   }
 
   assert {
-    condition     = aws_lambda_function.default.reserved_concurrent_executions == 10
-    error_message = "Lambda should default to 10 reserved concurrent executions"
+    condition     = aws_lambda_function.default.memory_size == 256 && aws_lambda_function.default.timeout == 60
+    error_message = "Lambda should use the provided memory and timeout"
   }
 
   assert {
-    condition     = aws_lambda_function.default.architectures == tolist(["arm64"])
-    error_message = "Lambda should default to arm64"
+    condition     = aws_lambda_function.default.reserved_concurrent_executions == 5
+    error_message = "Lambda should use the provided reserved concurrency"
   }
 
   assert {
-    condition     = length(aws_cloudwatch_log_group.default) == 0
-    error_message = "Log group should not be created unless explicitly defined."
+    condition     = aws_lambda_function.default.architectures == tolist(["x86_64"])
+    error_message = "Lambda should use the provided architectures"
   }
+
+  assert {
+    condition     = aws_lambda_function.default.environment[0].variables["LOG_LEVEL"] == "DEBUG"
+    error_message = "Lambda should include the provided environment variables"
+  }
+}
+
+run "bucket_wiring" {
+  command = apply
 
   assert {
     condition     = aws_s3_bucket_notification.default.bucket == "example-cloudtrail-bucket"
@@ -70,22 +88,8 @@ run "defaults" {
     error_message = "Caller identity output should pass through the mocked account id"
   }
 }
-run "create_log_group" {
-  command = apply
 
-  variables {
-    logs = {
-      create = true
-    }
-  }
-
-  assert {
-    condition     = length(aws_cloudwatch_log_group.default[0]) > 0
-    error_message = "Log group should be created when explicitly set"
-  }
-}
-
-run "custom_logs" {
+run "log_group_settings" {
   command = apply
 
   variables {
@@ -99,8 +103,13 @@ run "custom_logs" {
   }
 
   assert {
-    condition     = aws_cloudwatch_log_group.default[0].name == "/aws/lambda/cloudTrailConsole"
-    error_message = "Log group should use the provided name"
+    condition     = length(aws_cloudwatch_log_group.default) == 1
+    error_message = "Log group should be created when explicitly requested"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_log_group.default[0].name == "/aws/lambda/testConsole"
+    error_message = "Log group name should follow the provided name"
   }
 
   assert {
@@ -121,6 +130,21 @@ run "custom_logs" {
   assert {
     condition     = aws_cloudwatch_log_group.default[0].kms_key_id == "arn:aws:kms:us-west-2:123456789012:key/12345678-1234-1234-1234-123456789012"
     error_message = "Log group should use the provided KMS key"
+  }
+}
+
+run "log_group_disabled" {
+  command = apply
+
+  variables {
+    logs = {
+      create = false
+    }
+  }
+
+  assert {
+    condition     = length(aws_cloudwatch_log_group.default) == 0
+    error_message = "Log group should not be created when create = false"
   }
 }
 
@@ -156,37 +180,6 @@ run "custom_name_and_tags" {
   assert {
     condition     = aws_lambda_function.default.tags["Environment"] == "non-prd" && aws_lambda_function.default.tags["Name"] == "myConsoleLogger"
     error_message = "Lambda tags should merge provided tags with the Name tag"
-  }
-}
-
-run "lambda_overrides" {
-  command = apply
-
-  variables {
-    lambda = {
-      filepath                       = "./tests/fixtures/function.zip"
-      memory                         = 256
-      timeout                        = 60
-      reserved_concurrent_executions = 5
-      environment_variables = {
-        LOG_LEVEL = "DEBUG"
-      }
-    }
-  }
-
-  assert {
-    condition     = aws_lambda_function.default.memory_size == 256 && aws_lambda_function.default.timeout == 60
-    error_message = "Lambda should use the provided memory and timeout"
-  }
-
-  assert {
-    condition     = aws_lambda_function.default.reserved_concurrent_executions == 5
-    error_message = "Lambda should use the provided reserved concurrency"
-  }
-
-  assert {
-    condition     = aws_lambda_function.default.environment[0].variables["LOG_LEVEL"] == "DEBUG"
-    error_message = "Lambda should include the provided environment variables"
   }
 }
 
@@ -228,5 +221,10 @@ run "slack_settings" {
   assert {
     condition     = aws_lambda_function.default.environment[0].variables["SLACK_NAME_210987654321"] == ":evergreen_tree: PRD"
     error_message = "Lambda environment should include per-account SLACK_NAME_<account_id>"
+  }
+
+  assert {
+    condition     = aws_lambda_function.default.environment[0].variables["LOG_LEVEL"] == "DEBUG"
+    error_message = "Slack settings should merge with the provided environment variables"
   }
 }

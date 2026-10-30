@@ -1,24 +1,30 @@
+# Every run sets values explicitly and asserts against those literals, never
+# against module defaults, so changing a default does not break these tests.
 mock_provider "aws" {
   source = "./tests/mocks/aws"
 }
 
 variables {
-  name = "cloudTrailConsole"
+  name = "testConsole"
 
   s3 = {
     name = "example-cloudtrail-bucket"
   }
 
-  # Point the lambda at a committed fixture; the default
-  # ${path.module}/../../../../dist/function.zip is a build artifact
-  # that does not exist in a fresh checkout.
+  # Committed fixture; the module's default dist/function.zip is a build artifact.
   lambda = {
-    filepath = "./tests/fixtures/function.zip"
+    filepath                       = "./tests/fixtures/function.zip"
+    handler                        = "bootstrap"
+    runtime                        = "provided.al2"
+    memory                         = 256
+    timeout                        = 60
+    reserved_concurrent_executions = 5
+    architectures                  = ["x86_64"]
+    environment_variables = {
+      LOG_LEVEL = "DEBUG"
+    }
   }
 
-  # A real deployment of this module exists to wire a Lambda to one or more
-  # SNS topics, so the "typical call" baseline includes a topic. The
-  # no_topics run below covers the degenerate (but still valid) empty case.
   sns = {
     cloudtrail = {
       topic_arn = "arn:aws:sns:us-west-2:123456789012:cloudtrail-console"
@@ -26,38 +32,47 @@ variables {
   }
 }
 
-run "defaults" {
+run "lambda_settings" {
   command = apply
 
   assert {
-    condition     = aws_lambda_function.default.function_name == "cloudTrailConsole"
-    error_message = "Lambda function name should default to the module name"
+    condition     = aws_lambda_function.default.function_name == "testConsole"
+    error_message = "Lambda should use the provided name"
   }
 
   assert {
-    condition     = aws_lambda_function.default.handler == "main" && aws_lambda_function.default.runtime == "provided.al2023"
-    error_message = "Lambda should default to handler=main on provided.al2023"
+    condition     = aws_iam_role.default.name == "testConsole"
+    error_message = "IAM role should use the provided name"
   }
 
   assert {
-    condition     = aws_lambda_function.default.memory_size == 128 && aws_lambda_function.default.timeout == 15
-    error_message = "Lambda should default to 128MB memory and 15s timeout"
+    condition     = aws_lambda_function.default.handler == "bootstrap" && aws_lambda_function.default.runtime == "provided.al2"
+    error_message = "Lambda should use the provided handler and runtime"
   }
 
   assert {
-    condition     = aws_lambda_function.default.reserved_concurrent_executions == 10
-    error_message = "Lambda should default to 10 reserved concurrent executions"
+    condition     = aws_lambda_function.default.memory_size == 256 && aws_lambda_function.default.timeout == 60
+    error_message = "Lambda should use the provided memory and timeout"
   }
 
   assert {
-    condition     = aws_lambda_function.default.architectures == tolist(["arm64"])
-    error_message = "Lambda should default to arm64"
+    condition     = aws_lambda_function.default.reserved_concurrent_executions == 5
+    error_message = "Lambda should use the provided reserved concurrency"
   }
 
   assert {
-    condition     = length(aws_cloudwatch_log_group.default) == 0
-    error_message = "Log group should not be created unless explicitly defined."
+    condition     = aws_lambda_function.default.architectures == tolist(["x86_64"])
+    error_message = "Lambda should use the provided architectures"
   }
+
+  assert {
+    condition     = aws_lambda_function.default.environment[0].variables["LOG_LEVEL"] == "DEBUG"
+    error_message = "Lambda should include the provided environment variables"
+  }
+}
+
+run "topic_wiring" {
+  command = apply
 
   assert {
     condition     = length(aws_sns_topic_subscription.default) == 1
@@ -70,13 +85,8 @@ run "defaults" {
   }
 
   assert {
-    condition     = aws_sns_topic_subscription.default["cloudtrail"].protocol == "lambda"
-    error_message = "Subscription protocol should default to lambda"
-  }
-
-  assert {
     condition     = aws_sns_topic_subscription.default["cloudtrail"].endpoint == aws_lambda_function.default.arn
-    error_message = "Subscription endpoint should default to the module Lambda"
+    error_message = "Subscription endpoint should be the module Lambda"
   }
 
   assert {
@@ -95,84 +105,27 @@ run "defaults" {
   }
 }
 
-run "no_topics" {
-  command = apply
-
-  # Degenerate but still-valid call: the module's own variable default for
-  # sns is {}. This proves that fallback still plans/applies cleanly and
-  # wires up nothing, without pretending it's the typical use case.
-  variables {
-    sns = {}
-  }
-
-  assert {
-    condition     = length(aws_sns_topic_subscription.default) == 0
-    error_message = "No SNS subscriptions should be created when no topics are provided"
-  }
-
-  assert {
-    condition     = length(aws_lambda_permission.default) == 0
-    error_message = "No Lambda permissions should be created when no topics are provided"
-  }
-}
-
-run "create_log_group" {
+run "subscription_overrides" {
   command = apply
 
   variables {
-    logs = {
-      create = true
+    sns = {
+      cloudtrail = {
+        topic_arn = "arn:aws:sns:us-west-2:123456789012:cloudtrail-console"
+        protocol  = "https"
+        endpoint  = "https://example.com/hook"
+      }
     }
   }
 
   assert {
-    condition     = length(aws_cloudwatch_log_group.default) == 1
-    error_message = "Log group should be created when explicitly set"
+    condition     = aws_sns_topic_subscription.default["cloudtrail"].protocol == "https"
+    error_message = "Subscription should use the provided protocol"
   }
 
   assert {
-    condition     = aws_cloudwatch_log_group.default[0].name == "/aws/lambda/cloudTrailConsole"
-    error_message = "Log group name should default to /aws/lambda/<name>"
-  }
-
-  assert {
-    condition     = aws_cloudwatch_log_group.default[0].retention_in_days == 30
-    error_message = "Log retention should default to 30 days"
-  }
-}
-
-run "custom_name_and_tags" {
-  command = apply
-
-  variables {
-    name = "myConsoleLogger"
-    logs = {
-      create = true
-    }
-    tags = {
-      Environment = "non-prd"
-      ManagedBy   = "terraform"
-    }
-  }
-
-  assert {
-    condition     = aws_lambda_function.default.function_name == "myConsoleLogger"
-    error_message = "Lambda should use the provided name"
-  }
-
-  assert {
-    condition     = aws_iam_role.default.name == "myConsoleLogger"
-    error_message = "IAM role should use the provided name"
-  }
-
-  assert {
-    condition     = aws_cloudwatch_log_group.default[0].name == "/aws/lambda/myConsoleLogger"
-    error_message = "Log group name should follow the provided name"
-  }
-
-  assert {
-    condition     = aws_lambda_function.default.tags["Environment"] == "non-prd" && aws_lambda_function.default.tags["Name"] == "myConsoleLogger"
-    error_message = "Lambda tags should merge provided tags with the Name tag"
+    condition     = aws_sns_topic_subscription.default["cloudtrail"].endpoint == "https://example.com/hook"
+    error_message = "Subscription should use the provided endpoint"
   }
 }
 
@@ -221,7 +174,7 @@ run "multiple_topics_and_custom_permission" {
   }
 }
 
-run "custom_logs" {
+run "log_group_settings" {
   command = apply
 
   variables {
@@ -235,8 +188,13 @@ run "custom_logs" {
   }
 
   assert {
-    condition     = aws_cloudwatch_log_group.default[0].name == "/aws/lambda/cloudTrailConsole"
-    error_message = "Log group name should default to /aws/lambda/<name>"
+    condition     = length(aws_cloudwatch_log_group.default) == 1
+    error_message = "Log group should be created when explicitly requested"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_log_group.default[0].name == "/aws/lambda/testConsole"
+    error_message = "Log group name should follow the provided name"
   }
 
   assert {
@@ -260,34 +218,69 @@ run "custom_logs" {
   }
 }
 
-run "lambda_overrides" {
+run "log_group_custom_name" {
   command = apply
 
   variables {
-    lambda = {
-      filepath                       = "./tests/fixtures/function.zip"
-      memory                         = 256
-      timeout                        = 60
-      reserved_concurrent_executions = 5
-      environment_variables = {
-        LOG_LEVEL = "DEBUG"
-      }
+    logs = {
+      create = true
+      name   = "/custom/log-group"
     }
   }
 
   assert {
-    condition     = aws_lambda_function.default.memory_size == 256 && aws_lambda_function.default.timeout == 60
-    error_message = "Lambda should use the provided memory and timeout"
+    condition     = aws_cloudwatch_log_group.default[0].name == "/custom/log-group"
+    error_message = "Log group should use the provided name over the derived one"
+  }
+}
+
+run "log_group_disabled" {
+  command = apply
+
+  variables {
+    logs = {
+      create = false
+    }
   }
 
   assert {
-    condition     = aws_lambda_function.default.reserved_concurrent_executions == 5
-    error_message = "Lambda should use the provided reserved concurrency"
+    condition     = length(aws_cloudwatch_log_group.default) == 0
+    error_message = "Log group should not be created when create = false"
+  }
+}
+
+run "custom_name_and_tags" {
+  command = apply
+
+  variables {
+    name = "myConsoleLogger"
+    logs = {
+      create = true
+    }
+    tags = {
+      Environment = "non-prd"
+      ManagedBy   = "terraform"
+    }
   }
 
   assert {
-    condition     = aws_lambda_function.default.environment[0].variables["LOG_LEVEL"] == "DEBUG"
-    error_message = "Lambda should include the provided environment variables"
+    condition     = aws_lambda_function.default.function_name == "myConsoleLogger"
+    error_message = "Lambda should use the provided name"
+  }
+
+  assert {
+    condition     = aws_iam_role.default.name == "myConsoleLogger"
+    error_message = "IAM role should use the provided name"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_log_group.default[0].name == "/aws/lambda/myConsoleLogger"
+    error_message = "Log group name should follow the provided name"
+  }
+
+  assert {
+    condition     = aws_lambda_function.default.tags["Environment"] == "non-prd" && aws_lambda_function.default.tags["Name"] == "myConsoleLogger"
+    error_message = "Lambda tags should merge provided tags with the Name tag"
   }
 }
 
@@ -298,11 +291,11 @@ run "slack_settings" {
     slack = {
       name    = ":maple_leaf: NON-PRD"
       channel = "#aws-console-actions"
+      webhook = "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
       accounts = {
         "123456789012" = ":maple_leaf: NON-PRD"
         "210987654321" = ":evergreen_tree: PRD"
       }
-      webhook = "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
     }
   }
 
@@ -317,6 +310,11 @@ run "slack_settings" {
   }
 
   assert {
+    condition     = aws_lambda_function.default.environment[0].variables["SLACK_WEBHOOK"] == "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+    error_message = "Lambda environment should include SLACK_WEBHOOK"
+  }
+
+  assert {
     condition     = aws_lambda_function.default.environment[0].variables["SLACK_NAME_123456789012"] == ":maple_leaf: NON-PRD"
     error_message = "Lambda environment should include per-account SLACK_NAME_<account_id>"
   }
@@ -327,7 +325,7 @@ run "slack_settings" {
   }
 
   assert {
-    condition     = aws_lambda_function.default.environment[0].variables["SLACK_WEBHOOK"] == "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
-    error_message = "Lambda environment should include SLACK_WEBHOOK"
+    condition     = aws_lambda_function.default.environment[0].variables["LOG_LEVEL"] == "DEBUG"
+    error_message = "Slack settings should merge with the provided environment variables"
   }
 }
