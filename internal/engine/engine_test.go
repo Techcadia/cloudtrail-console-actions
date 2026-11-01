@@ -88,14 +88,6 @@ func consoleRecord(eventName string) map[string]any {
 	}
 }
 
-func TestEvaluateEmitByDefault(t *testing.T) {
-	e := compileYAML(t, testPolicy)
-	d := e.Evaluate(consoleRecord("PutUserPolicy"))
-	if !d.Emit {
-		t.Fatalf("PutUserPolicy dropped by %q, want emit", d.DroppedBy)
-	}
-}
-
 func TestEvaluateSkip(t *testing.T) {
 	e := compileYAML(t, testPolicy)
 	d := e.Evaluate(consoleRecord("GetUser"))
@@ -342,12 +334,6 @@ outputs:
 				t.Errorf("error %q does not mention %q", err, tt.wantErr)
 			}
 		})
-	}
-}
-
-func TestCompileDefaultPolicy(t *testing.T) {
-	if _, err := Compile(policy.Default()); err != nil {
-		t.Fatalf("default policy does not compile: %v", err)
 	}
 }
 

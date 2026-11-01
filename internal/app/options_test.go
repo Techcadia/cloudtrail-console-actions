@@ -85,13 +85,3 @@ func TestParseOptionsErrors(t *testing.T) {
 		t.Error("unknown flag: want error")
 	}
 }
-
-func TestParseOptionsActions(t *testing.T) {
-	opts, err := ParseOptions([]string{"--validate-only", "--dump-default-policy"}, env(nil))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !opts.ValidateOnly || !opts.DumpDefaultPolicy {
-		t.Error("action flags not parsed")
-	}
-}

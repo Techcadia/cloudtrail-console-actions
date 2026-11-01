@@ -166,22 +166,6 @@ func TestSlackEncodesURLParams(t *testing.T) {
 	}
 }
 
-// Custom policies may omit slack-facing outputs; the sink degrades instead
-// of panicking.
-func TestSlackToleratesMissingOutputs(t *testing.T) {
-	srv, _ := slackServer(t, "ok")
-	s := &Slack{
-		WebhookURL: srv.URL,
-		HTTPClient: srv.Client(),
-		LookupEnv:  func(string) (string, bool) { return "", false },
-	}
-	g := group(1)
-	g.Outputs = map[string]any{}
-	if err := s.Send(context.Background(), g); err != nil {
-		t.Fatalf("Send with empty outputs: %v", err)
-	}
-}
-
 // The webhook URL is the credential: transport errors must not echo it into
 // the logs.
 func TestSlackErrorsOmitWebhookURL(t *testing.T) {

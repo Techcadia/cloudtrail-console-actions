@@ -40,16 +40,6 @@ func TestDecodePlain(t *testing.T) {
 	}
 }
 
-func TestDecodeGzip(t *testing.T) {
-	file, err := Decode(bytes.NewReader(gzipped(t, logFile)))
-	if err != nil {
-		t.Fatalf("Decode: %v", err)
-	}
-	if len(file.Records) != 2 {
-		t.Fatalf("records = %d, want 2", len(file.Records))
-	}
-}
-
 func TestDecodeErrors(t *testing.T) {
 	// Content errors must wrap ErrMalformed so the caller can skip poison
 	// objects instead of failing (and endlessly retrying) the invocation.

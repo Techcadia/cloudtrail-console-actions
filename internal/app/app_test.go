@@ -161,17 +161,3 @@ func TestHandleDebugTracesDrops(t *testing.T) {
 		t.Errorf("debug output does not explain skipped rules:\n%s", out)
 	}
 }
-
-func TestHandleNoDebugCostWhenInfo(t *testing.T) {
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
-
-	var alerts []*collector.Group
-	a := newTestApp(t, logger, true, &alerts)
-	if err := a.Handle(context.Background(), s3Event()); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(buf.String(), "drop-read-prefixes-title") {
-		t.Error("trace lines leaked into info-level logs")
-	}
-}

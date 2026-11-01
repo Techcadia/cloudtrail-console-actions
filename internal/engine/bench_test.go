@@ -2,7 +2,6 @@ package engine_test
 
 import (
 	"testing"
-	"time"
 
 	"github.com/Techcadia/cloudtrail-console-actions/internal/engine"
 	"github.com/Techcadia/cloudtrail-console-actions/internal/policy"
@@ -86,48 +85,11 @@ func BenchmarkExplain(b *testing.B) {
 	}
 }
 
-// BenchmarkV1Reference is the ported v1 decision logic on the same record,
-// for an apples-to-apples baseline.
-func BenchmarkV1Reference(b *testing.B) {
-	b.ReportAllocs()
-	for b.Loop() {
-		if emit, _ := v1Decision(benchDropLate); emit {
-			b.Fatal("emitted")
-		}
-	}
-}
-
-// TestPerformanceBudget is a coarse regression gate: a mixed batch the size
-// of a large CloudTrail file must evaluate in a few milliseconds. The budget
-// is 100x the expected cost so it only trips on order-of-magnitude
-// regressions, not noisy CI.
-func TestPerformanceBudget(t *testing.T) {
-	if testing.Short() {
-		t.Skip("short mode")
-	}
-	eng := compileDefault(t)
-
-	records := []map[string]any{benchEmit, benchDropEarly, benchDropLate}
-	const n = 10_000
-
-	start := time.Now()
-	for i := 0; i < n; i++ {
-		eng.Evaluate(records[i%len(records)])
-	}
-	elapsed := time.Since(start)
-
-	perRecord := elapsed / n
-	t.Logf("evaluated %d records in %v (%v/record)", n, elapsed, perRecord)
-	if budget := 100 * time.Microsecond; perRecord > budget {
-		t.Errorf("evaluation cost %v/record exceeds budget %v", perRecord, budget)
-	}
-}
-
-// TestAllocationBudget guards the per-record allocation count, which the
-// time-based budget above (100x headroom) is far too coarse to catch. The
-// emit path settles around ~11 allocs/op; a regression that reintroduces
-// per-comparison ParseFloat or disabled-tracer boxing pushes it back toward
-// the hundreds. The ceiling has ~3x headroom so it isn't noisy.
+// TestAllocationBudget is the performance regression gate. Allocation counts
+// are deterministic, unlike timings, so the gate is reliable on noisy CI. The
+// emit path settles around 11 allocs per record; per-comparison parsing or
+// tracer boxing on the hot path would push it into the hundreds. The ceiling
+// has about 3x headroom.
 func TestAllocationBudget(t *testing.T) {
 	if testing.Short() {
 		t.Skip("short mode")

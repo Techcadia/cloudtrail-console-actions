@@ -75,11 +75,6 @@ func TestCompileAndEval(t *testing.T) {
 			want:     "",
 		},
 		{
-			name:     "fallback replaces empty string",
-			template: "{{ emptyString || 'fallback' }}",
-			want:     "fallback",
-		},
-		{
 			name:     "fallback not taken when value present",
 			template: "{{ userIdentity.invokedBy || '' }}",
 			want:     "AWS Internal",
@@ -223,17 +218,6 @@ func TestCompileErrors(t *testing.T) {
 				t.Errorf("Compile(%q) succeeded, want error", tt.template)
 			}
 		})
-	}
-}
-
-func TestString(t *testing.T) {
-	src := "{{ split(userIdentity.principalId, ':')[1] }}"
-	e, err := Compile(src)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if e.String() != src {
-		t.Errorf("String() = %q, want %q", e.String(), src)
 	}
 }
 

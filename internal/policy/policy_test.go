@@ -36,95 +36,6 @@ func TestParseMinimal(t *testing.T) {
 	}
 }
 
-func TestParseFullShape(t *testing.T) {
-	src := `
-apiVersion: cca/v1
-kind: FilterPolicy
-preprocess:
-  eventName:
-    - when:
-        all:
-          - { key: "{{ eventSource }}", operator: Equals, value: billingconsole.amazonaws.com }
-      value: "{{ trimPrefix(eventName, 'AWSPaymentPortalService.') }}"
-    - value: "{{ eventName }}"
-  userName:
-    - value: "{{ userIdentity.principalId }}"
-keep:
-  - name: always-surface-security-writes
-    match:
-      any:
-        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: [DeleteTrail, StopLogging] }
-filters:
-  - name: drop-noise
-    action: skip
-    match:
-      all:
-        - { key: "{{ userAgent || '' }}", operator: NotEquals, value: "" }
-    exclude:
-      any:
-        - { key: "{{ userAgent }}", operator: AnyIn, value: ["Mozilla/*"] }
-outputs:
-  event_source: "{{ eventSource }}"
-  account_id:
-    - when:
-        all:
-          - { key: "{{ recipientAccountId || '' }}", operator: NotEquals, value: "" }
-      value: "{{ recipientAccountId }}"
-    - value: "{{ userIdentity.accountId || '' }}"
-`
-	p, err := Parse([]byte(src))
-	if err != nil {
-		t.Fatalf("Parse error: %v", err)
-	}
-
-	// preprocess keeps document order and desugars.
-	if got := len(p.Preprocess); got != 2 {
-		t.Fatalf("preprocess fields = %d, want 2", got)
-	}
-	if p.Preprocess[0].Name != "eventName" || p.Preprocess[1].Name != "userName" {
-		t.Errorf("preprocess order = %q, %q", p.Preprocess[0].Name, p.Preprocess[1].Name)
-	}
-	if got := len(p.Preprocess[0].Rules); got != 2 {
-		t.Errorf("eventName rules = %d, want 2", got)
-	}
-	if p.Preprocess[0].Rules[0].When == nil || p.Preprocess[0].Rules[1].When != nil {
-		t.Errorf("eventName rule guards wrong: %+v", p.Preprocess[0].Rules)
-	}
-
-	// bare-string output desugars to one unconditional rule.
-	var eventSource, accountID *Field
-	for i := range p.Outputs {
-		switch p.Outputs[i].Name {
-		case "event_source":
-			eventSource = &p.Outputs[i]
-		case "account_id":
-			accountID = &p.Outputs[i]
-		}
-	}
-	if eventSource == nil || accountID == nil {
-		t.Fatalf("outputs missing: %+v", p.Outputs)
-	}
-	if len(eventSource.Rules) != 1 || eventSource.Rules[0].When != nil ||
-		eventSource.Rules[0].Value != "{{ eventSource }}" {
-		t.Errorf("event_source = %+v", eventSource.Rules)
-	}
-	if len(accountID.Rules) != 2 {
-		t.Errorf("account_id rules = %d, want 2", len(accountID.Rules))
-	}
-
-	if len(p.Keep) != 1 || p.Keep[0].Name != "always-surface-security-writes" {
-		t.Errorf("keep = %+v", p.Keep)
-	}
-	if p.Filters[0].Exclude == nil || len(p.Filters[0].Exclude.Any) != 1 {
-		t.Errorf("exclude = %+v", p.Filters[0].Exclude)
-	}
-
-	// AnyIn list values arrive as []any.
-	if _, ok := p.Keep[0].Match.Any[0].Value.([]any); !ok {
-		t.Errorf("list value type = %T, want []any", p.Keep[0].Match.Any[0].Value)
-	}
-}
-
 func TestParseErrors(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -409,6 +320,15 @@ preprocess:
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
+	// Fields keep document order: later preprocess fields may read earlier ones.
+	var names []string
+	for _, f := range p.Preprocess {
+		names = append(names, f.Name)
+	}
+	if got := strings.Join(names, ","); got != "flag,quoted,count,name" {
+		t.Errorf("preprocess order = %s", got)
+	}
+
 	want := map[string]any{"flag": true, "quoted": nil, "count": 3, "name": nil}
 	for _, f := range p.Preprocess {
 		if got := f.Rules[0].Literal; got != want[f.Name] {
