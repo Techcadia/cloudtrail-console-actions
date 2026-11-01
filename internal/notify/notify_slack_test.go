@@ -1,12 +1,14 @@
 package notify
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func slackServer(t *testing.T, response string) (*httptest.Server, *[][]byte) {
@@ -38,7 +40,7 @@ func TestSlackSingleEvent(t *testing.T) {
 		HTTPClient: srv.Client(),
 		LookupEnv:  func(string) (string, bool) { return "", false },
 	}
-	if err := s.Send(group(1)); err != nil {
+	if err := s.Send(context.Background(), group(1)); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 
@@ -69,7 +71,7 @@ func TestSlackGroupedEvent(t *testing.T) {
 		HTTPClient: srv.Client(),
 		LookupEnv:  func(string) (string, bool) { return "", false },
 	}
-	if err := s.Send(group(3)); err != nil {
+	if err := s.Send(context.Background(), group(3)); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 
@@ -102,7 +104,7 @@ func TestSlackNameLookupUsesAccountOutput(t *testing.T) {
 	g := group(1)
 	g.Outputs["account_id"] = "999999999999"
 	g.Outputs["identity_account_id"] = "111111111111"
-	if err := s.Send(g); err != nil {
+	if err := s.Send(context.Background(), g); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 	if !strings.Contains(string((*bodies)[0]), ":lock: security") {
@@ -117,7 +119,7 @@ func TestSlackNonOKResponse(t *testing.T) {
 		HTTPClient: srv.Client(),
 		LookupEnv:  func(string) (string, bool) { return "", false },
 	}
-	err := s.Send(group(1))
+	err := s.Send(context.Background(), group(1))
 	if err == nil || !strings.Contains(err.Error(), "invalid_payload") {
 		t.Fatalf("err = %v, want non-ok response error", err)
 	}
@@ -132,7 +134,7 @@ func TestSlackErrorCodeDisplay(t *testing.T) {
 	}
 	g := group(1)
 	g.Outputs["error_code"] = "AccessDenied"
-	if err := s.Send(g); err != nil {
+	if err := s.Send(context.Background(), g); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 	if !strings.Contains(string((*bodies)[0]), "`AccessDenied`") {
@@ -140,8 +142,6 @@ func TestSlackErrorCodeDisplay(t *testing.T) {
 	}
 }
 
-// Custom policies may omit slack-facing outputs; the sink degrades instead
-// of panicking.
 func TestSlackEncodesURLParams(t *testing.T) {
 	srv, bodies := slackServer(t, "ok")
 	s := &Slack{
@@ -153,7 +153,7 @@ func TestSlackEncodesURLParams(t *testing.T) {
 	// or the console deep link breaks.
 	g := group(3)
 	g.Outputs["user_name"] = "AROAEXAMPLE:jane@example.com"
-	if err := s.Send(g); err != nil {
+	if err := s.Send(context.Background(), g); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 
@@ -166,6 +166,8 @@ func TestSlackEncodesURLParams(t *testing.T) {
 	}
 }
 
+// Custom policies may omit slack-facing outputs; the sink degrades instead
+// of panicking.
 func TestSlackToleratesMissingOutputs(t *testing.T) {
 	srv, _ := slackServer(t, "ok")
 	s := &Slack{
@@ -175,7 +177,120 @@ func TestSlackToleratesMissingOutputs(t *testing.T) {
 	}
 	g := group(1)
 	g.Outputs = map[string]any{}
-	if err := s.Send(g); err != nil {
+	if err := s.Send(context.Background(), g); err != nil {
 		t.Fatalf("Send with empty outputs: %v", err)
+	}
+}
+
+// The webhook URL is the credential: transport errors must not echo it into
+// the logs.
+func TestSlackErrorsOmitWebhookURL(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	webhook := srv.URL + "/services/T000/B000/SECRETTOKEN"
+	srv.Close() // connection refused from here on
+
+	s := &Slack{
+		WebhookURL: webhook,
+		HTTPClient: &http.Client{Timeout: time.Second},
+		LookupEnv:  func(string) (string, bool) { return "", false },
+	}
+	err := s.Send(context.Background(), group(1))
+	if err == nil {
+		t.Fatal("Send to a closed server succeeded")
+	}
+	if strings.Contains(err.Error(), "SECRETTOKEN") {
+		t.Errorf("error leaks the webhook URL: %v", err)
+	}
+
+	s.WebhookURL = "https://hooks.slack.com/services/SECRETTOKEN\x7f"
+	if err := s.Send(context.Background(), group(1)); err == nil || strings.Contains(err.Error(), "SECRETTOKEN") {
+		t.Errorf("invalid-URL error = %v, want one without the URL", err)
+	}
+}
+
+func TestSlackRetriesRateLimit(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			io.WriteString(w, "rate_limited")
+			return
+		}
+		io.WriteString(w, "ok")
+	}))
+	t.Cleanup(srv.Close)
+
+	s := &Slack{
+		WebhookURL: srv.URL,
+		HTTPClient: srv.Client(),
+		LookupEnv:  func(string) (string, bool) { return "", false },
+	}
+	if err := s.Send(context.Background(), group(1)); err != nil {
+		t.Fatalf("Send after one 429: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("calls = %d, want 2", calls)
+	}
+}
+
+func TestSlackGivesUpAfterMaxAttempts(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(srv.Close)
+
+	s := &Slack{
+		WebhookURL: srv.URL,
+		HTTPClient: srv.Client(),
+		LookupEnv:  func(string) (string, bool) { return "", false },
+	}
+	if err := s.Send(context.Background(), group(1)); err == nil {
+		t.Fatal("Send succeeded against a failing server")
+	}
+	if calls != maxAttempts {
+		t.Errorf("calls = %d, want %d", calls, maxAttempts)
+	}
+}
+
+func TestSlackEscapesMrkdwn(t *testing.T) {
+	srv, bodies := slackServer(t, "ok")
+	s := &Slack{
+		WebhookURL: srv.URL,
+		HTTPClient: srv.Client(),
+		LookupEnv:  func(string) (string, bool) { return "", false },
+	}
+	g := group(1)
+	g.Outputs["user_name"] = "<!channel> & <https://evil.example|click>"
+	if err := s.Send(context.Background(), g); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	payload := decodePayload(t, (*bodies)[0])
+	text := payload["text"].(string)
+	if strings.Contains(text, "<!channel>") || !strings.Contains(text, "&lt;!channel&gt; &amp;") {
+		t.Errorf("user name not mrkdwn-escaped: %q", text)
+	}
+}
+
+// Same day-of-month in different months is not the same day.
+func TestSlackTimeWindowAcrossMonths(t *testing.T) {
+	srv, bodies := slackServer(t, "ok")
+	s := &Slack{
+		WebhookURL: srv.URL,
+		HTTPClient: srv.Client(),
+		LookupEnv:  func(string) (string, bool) { return "", false },
+	}
+	g := group(2)
+	g.First = time.Date(2026, 1, 5, 23, 59, 0, 0, time.UTC)
+	g.Last = time.Date(2026, 2, 5, 0, 1, 0, 0, time.UTC)
+	if err := s.Send(context.Background(), g); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if !strings.Contains(string((*bodies)[0]), "2026-01-05 23:59:00 ... 2026-02-05 00:01:00") {
+		t.Errorf("cross-month window must show both dates:\n%s", (*bodies)[0])
 	}
 }

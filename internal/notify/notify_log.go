@@ -23,7 +23,7 @@ type LogSink struct {
 }
 
 // Send logs the group's outputs plus count and s3_uri.
-func (l *LogSink) Send(g *collector.Group) {
+func (l *LogSink) Send(ctx context.Context, g *collector.Group) {
 	attrs := make([]slog.Attr, 0, len(g.Outputs)+2)
 	for _, k := range slices.Sorted(maps.Keys(g.Outputs)) {
 		attrs = append(attrs, slog.Any(k, g.Outputs[k]))
@@ -32,9 +32,9 @@ func (l *LogSink) Send(g *collector.Group) {
 		slog.Int("count", g.Count),
 		slog.String("s3_uri", s3URI(g)),
 	)
-	l.Logger.LogAttrs(context.Background(), slog.LevelInfo, "Event", attrs...)
+	l.Logger.LogAttrs(ctx, slog.LevelInfo, "Event", attrs...)
 }
 
 func s3URI(g *collector.Group) string {
-	return fmt.Sprintf("s3://%s/%s", g.Source.S3.Bucket.Name, g.Source.S3.Object.Key)
+	return fmt.Sprintf("s3://%s/%s", g.Source.S3.Bucket.Name, g.Source.ObjectKey())
 }

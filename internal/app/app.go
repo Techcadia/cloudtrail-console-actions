@@ -23,13 +23,14 @@ type App struct {
 	// NewObjectGetter returns an S3 client for the region a log file
 	// lives in.
 	NewObjectGetter func(region string) trail.ObjectGetter
-	// Alert receives every flushed group.
-	Alert func(*collector.Group)
+	// Alert receives every flushed group, with the invocation's context so
+	// sinks honour the Lambda deadline.
+	Alert func(context.Context, *collector.Group)
 }
 
 // Handle is the Lambda entrypoint.
 func (a *App) Handle(ctx context.Context, ev event.Event) error {
-	col := collector.New(a.Alert, a.Dedupe)
+	col := collector.New(func(g *collector.Group) { a.Alert(ctx, g) }, a.Dedupe)
 	for _, src := range ev.Records {
 		if err := a.processObject(ctx, src, col); err != nil {
 			return err
@@ -40,7 +41,7 @@ func (a *App) Handle(ctx context.Context, ev event.Event) error {
 }
 
 func (a *App) processObject(ctx context.Context, src event.Record, col *collector.Collector) error {
-	bucket, key := src.S3.Bucket.Name, src.S3.Object.Key
+	bucket, key := src.S3.Bucket.Name, src.ObjectKey()
 	a.Logger.LogAttrs(ctx, slog.LevelDebug, "reading log file",
 		slog.String("bucket", bucket), slog.String("key", key))
 
@@ -100,14 +101,16 @@ func (a *App) processRecord(ctx context.Context, record map[string]any, src even
 	}
 	errorCode, _ := record["errorCode"].(string)
 	col.Add(collector.Entry{
-		Record:    record,
-		Outputs:   d.Outputs,
-		UserName:  strOr(d.Preprocess["userName"], pathStr(record, "userIdentity", "principalId")),
-		EventName: strOr(d.Preprocess["eventName"], record["eventName"]),
-		ErrorCode: errorCode,
-		EventID:   str(record["eventID"]),
-		Time:      eventTime,
-		Source:    src,
+		Record:      record,
+		Outputs:     d.Outputs,
+		AccountID:   strOr(d.Outputs["account_id"], record["recipientAccountId"]),
+		EventSource: str(record["eventSource"]),
+		UserName:    strOr(d.Preprocess["userName"], pathStr(record, "userIdentity", "principalId")),
+		EventName:   strOr(d.Preprocess["eventName"], record["eventName"]),
+		ErrorCode:   errorCode,
+		EventID:     str(record["eventID"]),
+		Time:        eventTime,
+		Source:      src,
 	})
 }
 

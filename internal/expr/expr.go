@@ -2,8 +2,13 @@
 // by FilterPolicy documents. The language is a small, JMESPath-shaped subset:
 //
 //	expr    := chain ("||" chain)*
-//	chain   := head ("." ident | "[" int "]")*
-//	head    := 'string' | true | false | null | func "(" expr ("," expr)* ")" | ident
+//	chain   := head ("." name | "[" int "]")*
+//	head    := 'string' | true | false | null | func "(" expr ("," expr)* ")" | name
+//	name    := ident | "quoted ident"
+//
+// Quoted names address fields that are not identifiers, such as
+// requestParameters."x-amz-acl". In 'string' literals and "quoted" names a
+// backslash escapes the closing quote or another backslash.
 //
 // Supported functions: trimPrefix(s, prefix), contains(s, substr), split(s, sep),
 // keys(object) — the object's field names, sorted.
@@ -42,6 +47,9 @@ func Compile(template string) (*Expr, error) {
 	}
 	inner, ok = strings.CutSuffix(inner, "}}")
 	if !ok {
+		if strings.Contains(inner, "}}") {
+			return nil, fmt.Errorf("template %q: text and {{ }} may not be mixed", template)
+		}
 		return nil, fmt.Errorf("template %q: missing closing }}", template)
 	}
 
@@ -55,6 +63,12 @@ func Compile(template string) (*Expr, error) {
 		return nil, fmt.Errorf("template %q: unexpected trailing input %q", template, p.input[p.pos:])
 	}
 	return &Expr{src: template, node: n}, nil
+}
+
+// Literal returns an expression that always evaluates to v, for typed
+// (non-string) policy literals such as true or 42.
+func Literal(v any) *Expr {
+	return &Expr{src: fmt.Sprint(v), node: &literalNode{value: v}}
 }
 
 // MustCompile is Compile that panics on error, for statically known templates.
@@ -258,7 +272,7 @@ func (p *parser) parseChain() (node, error) {
 		switch p.peek() {
 		case '.':
 			p.pos++
-			name, err := p.parseIdent()
+			name, err := p.parseName()
 			if err != nil {
 				return nil, err
 			}
@@ -284,7 +298,17 @@ func (p *parser) parseHead() (node, error) {
 	p.skipSpace()
 	switch c := p.peek(); {
 	case c == '\'':
-		return p.parseString()
+		s, err := p.parseQuoted('\'')
+		if err != nil {
+			return nil, err
+		}
+		return &literalNode{value: s}, nil
+	case c == '"':
+		name, err := p.parseQuoted('"')
+		if err != nil {
+			return nil, err
+		}
+		return &identNode{name: name}, nil
 	case isIdentStart(c):
 		name, err := p.parseIdent()
 		if err != nil {
@@ -336,18 +360,40 @@ func (p *parser) parseCall(name string) (node, error) {
 	}
 }
 
-func (p *parser) parseString() (node, error) {
+// parseQuoted reads a quote-delimited token starting at the opening quote,
+// where a backslash escapes the next character.
+func (p *parser) parseQuoted(quote byte) (string, error) {
 	start := p.pos
 	p.pos++ // consume opening quote
+	var b strings.Builder
 	for p.pos < len(p.input) {
-		if p.input[p.pos] == '\'' {
-			s := p.input[start+1 : p.pos]
+		switch c := p.input[p.pos]; c {
+		case quote:
 			p.pos++
-			return &literalNode{value: s}, nil
+			return b.String(), nil
+		case '\\':
+			if p.pos+1 < len(p.input) {
+				p.pos++
+				c = p.input[p.pos]
+			}
+			b.WriteByte(c)
+		default:
+			b.WriteByte(c)
 		}
 		p.pos++
 	}
-	return nil, fmt.Errorf("unterminated string literal at offset %d", start)
+	if quote == '"' {
+		return "", fmt.Errorf("unterminated quoted name at offset %d", start)
+	}
+	return "", fmt.Errorf("unterminated string literal at offset %d", start)
+}
+
+// parseName reads a field name: a bare identifier or a "quoted" one.
+func (p *parser) parseName() (string, error) {
+	if p.peek() == '"' {
+		return p.parseQuoted('"')
+	}
+	return p.parseIdent()
 }
 
 func (p *parser) parseIdent() (string, error) {

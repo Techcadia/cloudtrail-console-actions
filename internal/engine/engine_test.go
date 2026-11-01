@@ -350,3 +350,28 @@ func TestCompileDefaultPolicy(t *testing.T) {
 		t.Fatalf("default policy does not compile: %v", err)
 	}
 }
+
+// An unquoted YAML literal keeps its type, so a preprocess flag compares
+// against a boolean condition value.
+func TestPreprocessTypedLiteral(t *testing.T) {
+	e := compileYAML(t, `
+apiVersion: cca/v1
+kind: FilterPolicy
+preprocess:
+  flag: true
+  label: "true"
+filters:
+  - name: drop-flagged
+    action: skip
+    match:
+      all:
+        - { key: "{{ preprocess.flag }}", operator: Equals, value: true }
+`)
+	d := e.Evaluate(map[string]any{})
+	if d.Emit || d.DroppedBy != "drop-flagged" {
+		t.Errorf("flag: true should match Equals true; decision = %+v", d)
+	}
+	if d.Preprocess["label"] != "true" {
+		t.Errorf(`quoted "true" must stay a string, got %#v`, d.Preprocess["label"])
+	}
+}

@@ -43,9 +43,53 @@ func TestUnmarshalSNSEvent(t *testing.T) {
 	if r.S3.Bucket.Name != "lambda-artifacts-deafc19498e3f2df" {
 		t.Errorf("bucket = %q", r.S3.Bucket.Name)
 	}
-	// Region comes from the topic ARN, not the inner S3 record.
-	if r.AWSRegion != "eu-west-2" {
-		t.Errorf("region = %q, want eu-west-2 (from topic arn)", r.AWSRegion)
+	// The bucket's region comes from the inner S3 record; the topic ARN is
+	// only a fallback.
+	if r.AWSRegion != "eu-west-1" {
+		t.Errorf("region = %q, want eu-west-1 (from the s3 record)", r.AWSRegion)
+	}
+}
+
+func TestSNSRegionFallsBackToTopic(t *testing.T) {
+	message, _ := json.Marshal(strings.Replace(s3Records, `"awsRegion":"eu-west-1",`, "", 1))
+	snsEvent := `{"Records":[{"EventSource":"aws:sns","Sns":{"TopicArn":"arn:aws:sns:eu-west-2:123456789012:sns-lambda","Message":` + string(message) + `}}]}`
+
+	var e Event
+	if err := json.Unmarshal([]byte(snsEvent), &e); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got := e.Records[0].AWSRegion; got != "eu-west-2" {
+		t.Errorf("region = %q, want eu-west-2 (from topic arn)", got)
+	}
+}
+
+// S3 sends s3:TestEvent when a notification is configured; it must not fail
+// the batch.
+func TestS3TestEventIsSkipped(t *testing.T) {
+	testEvent, _ := json.Marshal(`{"Service":"Amazon S3","Event":"s3:TestEvent","Time":"2026-07-07T12:00:00.000Z","Bucket":"trail-bucket"}`)
+	for name, payload := range map[string]string{
+		"sns": `{"Records":[{"EventSource":"aws:sns","Sns":{"TopicArn":"arn:aws:sns:eu-west-2:1:t","Message":` + string(testEvent) + `}}]}`,
+		"sqs": `{"Records":[{"eventSource":"aws:sqs","body":` + string(testEvent) + `}]}`,
+	} {
+		var e Event
+		if err := json.Unmarshal([]byte(payload), &e); err != nil {
+			t.Errorf("%s: unmarshal: %v", name, err)
+		}
+		if len(e.Records) != 0 {
+			t.Errorf("%s: records = %d, want 0", name, len(e.Records))
+		}
+	}
+}
+
+// S3 notifications URL-encode object keys.
+func TestObjectKeyIsURLDecoded(t *testing.T) {
+	payload := strings.Replace(s3Records, `"key":"b21b84d653bb07b05b1e6b33684dc11b"`, `"key":"trail%3Dprod/AWSLogs/my+file.json.gz"`, 1)
+	var e Event
+	if err := json.Unmarshal([]byte(payload), &e); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got := e.Records[0].ObjectKey(); got != "trail=prod/AWSLogs/my file.json.gz" {
+		t.Errorf("ObjectKey() = %q", got)
 	}
 }
 

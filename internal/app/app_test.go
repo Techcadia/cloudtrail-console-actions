@@ -64,7 +64,7 @@ func newTestApp(t *testing.T, logger *slog.Logger, dedupe bool, alerts *[]*colle
 		NewObjectGetter: func(region string) trail.ObjectGetter {
 			return &fakeGetter{body: buf.Bytes()}
 		},
-		Alert: func(g *collector.Group) { *alerts = append(*alerts, g) },
+		Alert: func(_ context.Context, g *collector.Group) { *alerts = append(*alerts, g) },
 	}
 }
 
@@ -111,7 +111,7 @@ func TestHandleSkipsPoisonObject(t *testing.T) {
 		Logger:          logger,
 		Dedupe:          true,
 		NewObjectGetter: func(string) trail.ObjectGetter { return poisonGetter{} },
-		Alert:           func(g *collector.Group) { alerts = append(alerts, g) },
+		Alert:           func(_ context.Context, g *collector.Group) { alerts = append(alerts, g) },
 	}
 
 	// A poison object must not fail the invocation (which would retry forever)

@@ -129,14 +129,17 @@
       "required": ["value"],
       "properties": {
         "when": { "$ref": "#/$defs/conditions" },
-        "value": { "type": "string", "description": "Template string, e.g. {{ userIdentity.userName }}" }
+        "value": {
+          "type": ["string", "number", "boolean"],
+          "description": "Template string, e.g. {{ userIdentity.userName }}, or an unquoted typed literal (true, 42)."
+        }
       }
     },
 
     "outputField": {
       "description": "Either an unconditional template string, or an ordered list of rules (first matching `when` wins).",
       "oneOf": [
-        { "type": "string" },
+        { "type": ["string", "number", "boolean"] },
         { "type": "array", "items": { "$ref": "#/$defs/outputRule" }, "minItems": 1 }
       ]
     }

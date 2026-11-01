@@ -2,6 +2,8 @@ ifndef ARCH
 override ARCH = arm64
 endif
 
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+
 .PHONY: default clean build zip test vet
 
 default: build
@@ -25,7 +27,7 @@ build: clean
 	go build \
 	-tags lambda.norpc \
 	-trimpath \
-	-ldflags "-s -w" \
+	-ldflags "-s -w -X main.version=$(VERSION)" \
 	-o ./bin/bootstrap \
 	./cmd/lambda
 

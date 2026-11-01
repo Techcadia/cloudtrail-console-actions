@@ -23,11 +23,16 @@ import (
 
 // keepListed are the preprocess.eventName values the default keep rule vetoes.
 var keepListed = map[string]bool{
-	"DeleteTrail":    true,
-	"StopLogging":    true,
-	"PutUserPolicy":  true,
-	"DeleteFlowLogs": true,
-	"UpdateTrail":    true,
+	"DeleteTrail":                 true,
+	"StopLogging":                 true,
+	"PutUserPolicy":               true,
+	"DeleteFlowLogs":              true,
+	"UpdateTrail":                 true,
+	"DeleteDetector":              true,
+	"DisableSecurityHub":          true,
+	"StopConfigurationRecorder":   true,
+	"DeleteConfigurationRecorder": true,
+	"DeleteDeliveryChannel":       true,
 }
 
 type pair struct{ source, name string }
@@ -152,6 +157,11 @@ var pairs = []pair{
 	{"cloudtrail.amazonaws.com", "UpdateTrail"},
 	{"iam.amazonaws.com", "PutUserPolicy"},
 	{"ec2.amazonaws.com", "DeleteFlowLogs"},
+	{"guardduty.amazonaws.com", "DeleteDetector"},
+	{"securityhub.amazonaws.com", "DisableSecurityHub"},
+	{"config.amazonaws.com", "StopConfigurationRecorder"},
+	{"config.amazonaws.com", "DeleteConfigurationRecorder"},
+	{"config.amazonaws.com", "DeleteDeliveryChannel"},
 
 	// emit controls
 	{"ec2.amazonaws.com", "RunInstances"},
@@ -255,8 +265,11 @@ func assertParity(t *testing.T, eng *engine.Engine, rec map[string]any) {
 	}
 
 	// The keep block is the one agreed divergence: keep-listed writes must
-	// always emit, even when v1 dropped them.
-	if name, _ := d.Preprocess["eventName"].(string); keepListed[name] {
+	// always emit, even when v1 dropped them — unless AWS itself made the
+	// call, where v1's AWS Internal drop still applies.
+	userIdentity, _ := rec["userIdentity"].(map[string]any)
+	awsInternal := userIdentity["invokedBy"] == "AWS Internal"
+	if name, _ := d.Preprocess["eventName"].(string); keepListed[name] && !awsInternal {
 		if !d.Emit {
 			t.Errorf("keep-listed %q must emit, dropped by %q\nrecord: %s", name, d.DroppedBy, recordJSON(rec))
 		}
@@ -293,6 +306,20 @@ func TestGoldenParityCorpus(t *testing.T) {
 		}
 	}
 	t.Logf("corpus size: %d records", count)
+}
+
+// The keep veto surfaces security writes from any user agent, but not calls
+// AWS makes on the account's behalf.
+func TestDefaultKeepVeto(t *testing.T) {
+	eng := compileDefault(t)
+	cli := buildRecord(pair{"cloudtrail.amazonaws.com", "UpdateTrail"}, "aws-cli/2.13.0 Python/3.11.4", identities[0], nil, "")
+	if d := eng.Evaluate(cli); !d.Emit || d.KeptBy == "" {
+		t.Errorf("CLI UpdateTrail must be kept, got %+v", d)
+	}
+	internal := buildRecord(pair{"cloudtrail.amazonaws.com", "UpdateTrail"}, "", identities[6], nil, "")
+	if d := eng.Evaluate(internal); d.Emit {
+		t.Errorf("AWS Internal UpdateTrail must stay dropped, kept by %q", d.KeptBy)
+	}
 }
 
 // TestGoldenParityExamples runs the real CloudTrail sample files through both

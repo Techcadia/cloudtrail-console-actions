@@ -18,7 +18,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
@@ -33,7 +32,8 @@ import (
 	"github.com/Techcadia/cloudtrail-console-actions/internal/trail"
 )
 
-const version = "2.0.0"
+// version is stamped at build time (make build sets -X main.version).
+var version = "2.0.0-dev"
 
 func main() {
 	if err := run(); err != nil {
@@ -79,14 +79,16 @@ func run() error {
 		return fmt.Errorf("loading AWS config: %w", err)
 	}
 
-	// One S3 client per log-file region, reused across invocations.
-	clients := sync.Map{}
+	// One S3 client per log-file region, reused across invocations. A plain
+	// map is enough: the Lambda runtime runs one invocation at a time per
+	// process.
+	clients := map[string]*s3.Client{}
 	newObjectGetter := func(region string) trail.ObjectGetter {
-		if c, ok := clients.Load(region); ok {
-			return c.(*s3.Client)
+		c, ok := clients[region]
+		if !ok {
+			c = s3.NewFromConfig(awsCfg, func(o *s3.Options) { o.Region = region })
+			clients[region] = c
 		}
-		c := s3.NewFromConfig(awsCfg, func(o *s3.Options) { o.Region = region })
-		clients.Store(region, c)
 		return c
 	}
 
@@ -112,7 +114,7 @@ func run() error {
 // buildAlert composes the sinks: the Event log line always, Slack when a
 // webhook is configured. Slack failures are logged, not fatal — the log line
 // has already preserved the event.
-func buildAlert(logger *slog.Logger) func(*collector.Group) {
+func buildAlert(logger *slog.Logger) func(context.Context, *collector.Group) {
 	logSink := &notify.LogSink{Logger: logger}
 
 	webhook, hasWebhook := os.LookupEnv("SLACK_WEBHOOK")
@@ -126,12 +128,12 @@ func buildAlert(logger *slog.Logger) func(*collector.Group) {
 		}
 	}
 
-	return func(g *collector.Group) {
-		logSink.Send(g)
+	return func(ctx context.Context, g *collector.Group) {
+		logSink.Send(ctx, g)
 		if slack == nil {
 			return
 		}
-		if err := slack.Send(g); err != nil {
+		if err := slack.Send(ctx, g); err != nil {
 			logger.Error("sending slack notification",
 				"error", err,
 				"event_name", g.EventName,

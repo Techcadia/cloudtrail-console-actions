@@ -281,6 +281,90 @@ filters:
 `,
 			wantErr: "value",
 		},
+		{
+			// when: blocks are decoded from a node, outside KnownFields
+			// mode; a typo there used to drop the clause silently.
+			name: "unknown key in when block",
+			src: `
+apiVersion: cca/v1
+kind: FilterPolicy
+preprocess:
+  x:
+    - when:
+        any:
+          - { key: "{{ a }}", operator: Equals, value: 1 }
+        alll:
+          - { key: "{{ b }}", operator: Equals, value: 2 }
+      value: hit
+filters:
+  - name: f
+    action: skip
+    match:
+      all:
+        - { key: "{{ eventName }}", operator: Equals, value: x }
+`,
+			wantErr: `unknown key "alll"`,
+		},
+		{
+			name: "unknown key in condition",
+			src: `
+apiVersion: cca/v1
+kind: FilterPolicy
+filters:
+  - name: f
+    action: skip
+    match:
+      all:
+        - { key: "{{ eventName }}", operator: Equals, value: x, negate: true }
+`,
+			wantErr: `unknown key "negate"`,
+		},
+		{
+			name: "duplicate output field",
+			src: minimalPolicy + `
+outputs:
+  user_name: "{{ a }}"
+  user_name: "{{ b }}"
+`,
+			wantErr: `duplicate field "user_name"`,
+		},
+		{
+			// 012345670123 would be read as octal 1402433619.
+			name: "unquoted zero-padded account id",
+			src: `
+apiVersion: cca/v1
+kind: FilterPolicy
+filters:
+  - name: f
+    action: skip
+    match:
+      all:
+        - { key: "{{ recipientAccountId }}", operator: AnyIn, value: [111111111111, 012345670123] }
+`,
+			wantErr: "leading zero",
+		},
+		{
+			name: "unquoted zero-padded number that is not octal",
+			src: `
+apiVersion: cca/v1
+kind: FilterPolicy
+filters:
+  - name: f
+    action: skip
+    match:
+      all:
+        - { key: "{{ recipientAccountId }}", operator: Equals, value: 012345678901 }
+`,
+			wantErr: "leading zero",
+		},
+		{
+			name: "null field value",
+			src: minimalPolicy + `
+outputs:
+  user_name: ~
+`,
+			wantErr: "value is required",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -292,5 +376,43 @@ filters:
 				t.Errorf("error %q does not mention %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestParseQuotedZeroPaddedAccepted(t *testing.T) {
+	p, err := Parse([]byte(`
+apiVersion: cca/v1
+kind: FilterPolicy
+filters:
+  - name: f
+    action: skip
+    match:
+      all:
+        - { key: "{{ recipientAccountId }}", operator: Equals, value: "012345670123" }
+`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got := p.Filters[0].Match.All[0].Value; got != "012345670123" {
+		t.Errorf("value = %#v, want the string", got)
+	}
+}
+
+func TestParseFieldLiteralTypes(t *testing.T) {
+	p, err := Parse([]byte(minimalPolicy + `
+preprocess:
+  flag: true
+  quoted: "true"
+  count: 3
+  name: "{{ eventName }}"
+`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	want := map[string]any{"flag": true, "quoted": nil, "count": 3, "name": nil}
+	for _, f := range p.Preprocess {
+		if got := f.Rules[0].Literal; got != want[f.Name] {
+			t.Errorf("%s: Literal = %#v, want %#v", f.Name, got, want[f.Name])
+		}
 	}
 }

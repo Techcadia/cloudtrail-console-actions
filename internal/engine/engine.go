@@ -110,7 +110,9 @@ func compileFields(section string, fields policy.Fields) ([]field, error) {
 		for i, r := range f.Rules {
 			fr := fieldRule{}
 			var err error
-			if fr.value, err = expr.Compile(r.Value); err != nil {
+			if r.Literal != nil {
+				fr.value = expr.Literal(r.Literal)
+			} else if fr.value, err = expr.Compile(r.Value); err != nil {
 				return nil, fmt.Errorf("%s field %q rule %d: %w", section, f.Name, i, err)
 			}
 			if r.When != nil {

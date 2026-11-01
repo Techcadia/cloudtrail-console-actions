@@ -37,9 +37,9 @@ func TestDedupeGroupsIdenticalEvents(t *testing.T) {
 	if !g.First.Equal(t0) || !g.Last.Equal(t0.Add(2*time.Minute)) {
 		t.Errorf("window = %v..%v", g.First, g.Last)
 	}
-	// The most recent record wins, matching v1.
-	if g.Record["eventID"] != "e3" {
-		t.Errorf("record = %v, want latest", g.Record["eventID"])
+	// The most recent record wins wholesale, so every field describes it.
+	if g.Record["eventID"] != "e3" || g.EventID != "e3" {
+		t.Errorf("record = %v / EventID = %v, want latest", g.Record["eventID"], g.EventID)
 	}
 }
 
@@ -56,6 +56,48 @@ func TestDedupeKeySeparatesGroups(t *testing.T) {
 
 	if len(alerts) != 4 {
 		t.Fatalf("alerts = %d, want 4 (distinct user/event/error tuples)", len(alerts))
+	}
+}
+
+func TestDedupeKeySeparatesAccountsAndSources(t *testing.T) {
+	var alerts []*Group
+	c := New(func(g *Group) { alerts = append(alerts, g) }, true)
+
+	t0 := time.Date(2026, 7, 7, 12, 0, 0, 0, time.UTC)
+	base := entry("jane", "TagResource", "", "e1", t0)
+	base.AccountID, base.EventSource = "111111111111", "lambda.amazonaws.com"
+	otherAccount := base
+	otherAccount.AccountID, otherAccount.EventID = "222222222222", "e2"
+	otherSource := base
+	otherSource.EventSource, otherSource.EventID = "sqs.amazonaws.com", "e3"
+	c.Add(base)
+	c.Add(otherAccount)
+	c.Add(otherSource)
+	c.Flush()
+
+	if len(alerts) != 3 {
+		t.Fatalf("alerts = %d, want 3 (same user/event in distinct accounts and services)", len(alerts))
+	}
+}
+
+func TestGroupSourceFollowsLatestRecord(t *testing.T) {
+	var alerts []*Group
+	c := New(func(g *Group) { alerts = append(alerts, g) }, true)
+
+	t0 := time.Date(2026, 7, 7, 12, 0, 0, 0, time.UTC)
+	first := entry("jane", "PutUserPolicy", "", "e1", t0)
+	first.Source.S3.Object.Key = "file-1.json.gz"
+	second := entry("jane", "PutUserPolicy", "", "e2", t0.Add(time.Minute))
+	second.Source.S3.Object.Key = "file-2.json.gz"
+	c.Add(first)
+	c.Add(second)
+	c.Flush()
+
+	if got := alerts[0].Source.S3.Object.Key; got != "file-2.json.gz" {
+		t.Errorf("source = %q, want the latest record's file", got)
+	}
+	if !alerts[0].First.Equal(t0) {
+		t.Errorf("First = %v, want the first record's time", alerts[0].First)
 	}
 }
 

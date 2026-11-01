@@ -66,13 +66,30 @@ preprocess:
 # NOT present in v1 — this is the agreed v2 enhancement. A keep rule that
 # applies forces EMIT even if a skip rule matched. No `exclude` permitted here,
 # so the veto is absolute and the policy stays provably terminating.
+#
+# Scoped to writes that disable logging or detection (rarely legitimate from
+# automation) plus PutUserPolicy; IaC-routine writes such as PutBucketPolicy
+# are left out so every `terraform apply` does not alert. Calls AWS makes on
+# your behalf (invokedBy "AWS Internal", e.g. Control Tower updating a
+# service-managed trail) are not vetoed.
 keep:
   - name: always-surface-security-writes
     match:
-      any:
+      all:
         - key: "{{ preprocess.eventName }}"
           operator: AnyIn
-          value: [DeleteTrail, StopLogging, PutUserPolicy, DeleteFlowLogs, UpdateTrail]
+          value:
+            - DeleteTrail
+            - StopLogging
+            - UpdateTrail
+            - PutUserPolicy
+            - DeleteFlowLogs
+            - DeleteDetector               # GuardDuty
+            - DisableSecurityHub
+            - StopConfigurationRecorder
+            - DeleteConfigurationRecorder
+            - DeleteDeliveryChannel        # AWS Config
+        - { key: "{{ userIdentity.invokedBy || '' }}", operator: NotEquals, value: "AWS Internal" }
 
 # ── Stage 2: skip rules (default action is EMIT; these drop noise) ────────────
 filters:
@@ -407,10 +424,11 @@ filters:
           value: ['console.*.amazonaws.com', 'signin.*.amazonaws.com', '(?i)aws[\s-]internal']
 
 # ── Stage 3: emitted projection ──────────────────────────────────────────────
-# Every field lands on the "Event" log line. The Slack notifier reads the
-# documented keys: event_source, event_name, user_name, account_id,
-# identity_account_id, error_code, event_id and aws_region — override them
-# here to change what notifications show.
+# Every field lands on the "Event" log line. The Slack notifier reads
+# event_source, user_name, account_id, error_code, event_id and aws_region —
+# override them here to change what notifications show. Slack's headline
+# event name is preprocess.eventName (the grouping key), not event_name, and
+# SLACK_NAME_<accountId> lookups key on account_id.
 outputs:
   event_source: "{{ eventSource }}"
   event_name:   "{{ eventName }}"          # raw record field — NOT the trimmed preprocess.eventName

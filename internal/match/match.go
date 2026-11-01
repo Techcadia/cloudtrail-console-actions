@@ -222,13 +222,20 @@ func scalarList(op Operator, value any) ([]any, error) {
 }
 
 // equalScalar compares exactly — no wildcards — with numeric cross-type
-// coercion (YAML ints vs JSON float64s). nil equals nothing.
+// coercion (YAML ints vs JSON float64s, or a number against a numeric
+// string). Two strings compare as strings: "01" is not "1", so zero-padded
+// identifiers such as account IDs never collide. nil equals nothing.
 func equalScalar(key, value any) bool {
 	if key == nil || value == nil {
 		return false
 	}
 	if key == value {
 		return true
+	}
+	if _, ok := key.(string); ok {
+		if _, ok := value.(string); ok {
+			return false
+		}
 	}
 	kn, kok := toNumber(key)
 	vn, vok := toNumber(value)

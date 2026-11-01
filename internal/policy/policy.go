@@ -7,6 +7,8 @@ package policy
 import (
 	"bytes"
 	"fmt"
+	"slices"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -72,6 +74,10 @@ type Field struct {
 type Rule struct {
 	When  *Conditions
 	Value string
+	// Literal holds the typed value of an unquoted non-string YAML scalar
+	// (true, 42, 1.5), so `flag: true` yields a bool rather than the string
+	// "true". Nil for templates and string literals.
+	Literal any
 }
 
 // UnmarshalYAML decodes a fields mapping preserving document order and
@@ -80,12 +86,23 @@ func (f *Fields) UnmarshalYAML(node *yaml.Node) error {
 	if node.Kind != yaml.MappingNode {
 		return fmt.Errorf("line %d: expected a mapping of field names", node.Line)
 	}
+	seen := make(map[string]bool, len(node.Content)/2)
 	for i := 0; i < len(node.Content); i += 2 {
 		keyNode, valNode := node.Content[i], node.Content[i+1]
+		// The mapping is walked by hand, so yaml.v3's duplicate-key check
+		// does not apply here.
+		if seen[keyNode.Value] {
+			return fmt.Errorf("line %d: duplicate field %q", keyNode.Line, keyNode.Value)
+		}
+		seen[keyNode.Value] = true
 		field := Field{Name: keyNode.Value}
 		switch valNode.Kind {
 		case yaml.ScalarNode:
-			field.Rules = []Rule{{Value: valNode.Value}}
+			rule, err := decodeValue(valNode)
+			if err != nil {
+				return fmt.Errorf("field %q: %w", field.Name, err)
+			}
+			field.Rules = []Rule{rule}
 		case yaml.SequenceNode:
 			for _, ruleNode := range valNode.Content {
 				rule, err := decodeRule(ruleNode)
@@ -120,9 +137,11 @@ func decodeRule(node *yaml.Node) (Rule, error) {
 				return Rule{}, err
 			}
 		case "value":
-			if err := valNode.Decode(&rule.Value); err != nil {
+			v, err := decodeValue(valNode)
+			if err != nil {
 				return Rule{}, err
 			}
+			rule.Value, rule.Literal = v.Value, v.Literal
 			hasValue = true
 		default:
 			return Rule{}, fmt.Errorf("line %d: unknown key %q in rule", keyNode.Line, keyNode.Value)
@@ -132,6 +151,94 @@ func decodeRule(node *yaml.Node) (Rule, error) {
 		return Rule{}, fmt.Errorf("line %d: rule is missing value", node.Line)
 	}
 	return rule, nil
+}
+
+// decodeValue decodes a field value: a template or string literal, or a
+// typed scalar literal.
+func decodeValue(node *yaml.Node) (Rule, error) {
+	if node.Kind != yaml.ScalarNode {
+		return Rule{}, fmt.Errorf("line %d: value must be a template string or a scalar", node.Line)
+	}
+	if err := checkZeroPadded(node); err != nil {
+		return Rule{}, err
+	}
+	switch node.ShortTag() {
+	case "!!str":
+		return Rule{Value: node.Value}, nil
+	case "!!null":
+		// Leave Value empty so validation reports it as missing.
+		return Rule{}, nil
+	}
+	var v any
+	if err := node.Decode(&v); err != nil {
+		return Rule{}, err
+	}
+	return Rule{Value: node.Value, Literal: v}, nil
+}
+
+// UnmarshalYAML decodes an any:/all: block. Custom unmarshalers run outside
+// the decoder's KnownFields mode (and `when:` blocks are decoded from a
+// node), so unknown keys are rejected here explicitly.
+func (c *Conditions) UnmarshalYAML(node *yaml.Node) error {
+	if err := checkKeys(node, "any", "all"); err != nil {
+		return err
+	}
+	type plain Conditions
+	return node.Decode((*plain)(c))
+}
+
+// UnmarshalYAML decodes one condition, rejecting unknown keys and
+// zero-padded unquoted numbers in its value.
+func (c *Condition) UnmarshalYAML(node *yaml.Node) error {
+	if err := checkKeys(node, "key", "operator", "value"); err != nil {
+		return err
+	}
+	for i := 0; i < len(node.Content); i += 2 {
+		if node.Content[i].Value == "value" {
+			if err := checkZeroPadded(node.Content[i+1]); err != nil {
+				return err
+			}
+		}
+	}
+	type plain Condition
+	return node.Decode((*plain)(c))
+}
+
+// checkKeys rejects a mapping key outside allowed.
+func checkKeys(node *yaml.Node, allowed ...string) error {
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("line %d: expected a mapping with keys %s", node.Line, strings.Join(allowed, ", "))
+	}
+	for i := 0; i < len(node.Content); i += 2 {
+		k := node.Content[i]
+		if !slices.Contains(allowed, k.Value) {
+			return fmt.Errorf("line %d: unknown key %q (want one of %s)", k.Line, k.Value, strings.Join(allowed, ", "))
+		}
+	}
+	return nil
+}
+
+// checkZeroPadded rejects unquoted numbers with a leading zero. YAML reads
+// them as numbers — octal when every digit is 0-7 — so an account ID like
+// 012345670123 silently becomes 1402433619 and never matches.
+func checkZeroPadded(node *yaml.Node) error {
+	switch node.Kind {
+	case yaml.SequenceNode:
+		for _, item := range node.Content {
+			if err := checkZeroPadded(item); err != nil {
+				return err
+			}
+		}
+	case yaml.ScalarNode:
+		tag := node.ShortTag()
+		if node.Style == 0 && (tag == "!!int" || tag == "!!float") {
+			digits := strings.TrimLeft(node.Value, "+-")
+			if len(digits) > 1 && digits[0] == '0' && digits[1] >= '0' && digits[1] <= '9' {
+				return fmt.Errorf("line %d: %s has a leading zero and would be read as a number; quote it (%q)", node.Line, node.Value, node.Value)
+			}
+		}
+	}
+	return nil
 }
 
 // Parse decodes and structurally validates a FilterPolicy document.
@@ -216,15 +323,21 @@ func (c *Conditions) validate() error {
 	if len(c.Any) == 0 && len(c.All) == 0 {
 		return fmt.Errorf("needs at least one of any: or all:")
 	}
-	for i, cond := range append(c.Any, c.All...) {
-		if cond.Key == "" {
-			return fmt.Errorf("condition %d: key is required", i)
-		}
-		if cond.Operator == "" {
-			return fmt.Errorf("condition %d (key %s): operator is required", i, cond.Key)
-		}
-		if cond.Value == nil {
-			return fmt.Errorf("condition %d (key %s): value is required", i, cond.Key)
+	for _, blk := range []struct {
+		name  string
+		conds []Condition
+	}{{"any", c.Any}, {"all", c.All}} {
+		block := blk.name
+		for i, cond := range blk.conds {
+			if cond.Key == "" {
+				return fmt.Errorf("%s[%d]: key is required", block, i)
+			}
+			if cond.Operator == "" {
+				return fmt.Errorf("%s[%d] (key %s): operator is required", block, i, cond.Key)
+			}
+			if cond.Value == nil {
+				return fmt.Errorf("%s[%d] (key %s): value is required", block, i, cond.Key)
+			}
 		}
 	}
 	return nil

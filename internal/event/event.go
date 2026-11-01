@@ -4,6 +4,7 @@
 package event
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 
@@ -25,6 +26,16 @@ type Record struct {
 	S3             events.S3Entity
 	SQS            events.SQSMessage
 	SNS            events.SNSEntity
+}
+
+// ObjectKey is the S3 object key. S3 event notifications URL-encode keys
+// (spaces as '+', '=' as %3D); this returns the decoded form, falling back
+// to the raw key for hand-built events that lack it.
+func (r Record) ObjectKey() string {
+	if r.S3.Object.URLDecodedKey != "" {
+		return r.S3.Object.URLDecodedKey
+	}
+	return r.S3.Object.Key
 }
 
 // UnmarshalJSON sniffs the envelope type from the first record's eventSource
@@ -89,12 +100,9 @@ func (event *Event) mapS3EventRecords(s3Event *events.S3Event) error {
 
 func (event *Event) mapSNSEventRecords(snsEvent *events.SNSEvent) error {
 	for _, snsRecord := range snsEvent.Records {
-		var s3Event events.S3Event
-		if err := json.Unmarshal([]byte(snsRecord.SNS.Message), &s3Event); err != nil {
-			return fmt.Errorf("decoding sns message as an s3 event: %w", err)
-		}
-		if len(s3Event.Records) == 0 {
-			return fmt.Errorf("sns message contains no s3 records")
+		s3Event, err := decodeS3Notification(snsRecord.SNS.Message)
+		if err != nil {
+			return fmt.Errorf("sns message: %w", err)
 		}
 
 		topicArn, err := arn.Parse(snsRecord.SNS.TopicArn)
@@ -106,7 +114,7 @@ func (event *Event) mapSNSEventRecords(snsEvent *events.SNSEvent) error {
 			event.Records = append(event.Records, Record{
 				EventSource:    snsRecord.EventSource,
 				EventSourceArn: snsRecord.SNS.TopicArn,
-				AWSRegion:      topicArn.Region,
+				AWSRegion:      cmp.Or(s3Record.AWSRegion, topicArn.Region),
 				SNS:            snsRecord.SNS,
 				S3:             s3Record.S3,
 			})
@@ -117,23 +125,41 @@ func (event *Event) mapSNSEventRecords(snsEvent *events.SNSEvent) error {
 
 func (event *Event) mapSQSEventRecords(sqsEvent *events.SQSEvent) error {
 	for _, sqsRecord := range sqsEvent.Records {
-		var s3Event events.S3Event
-		if err := json.Unmarshal([]byte(sqsRecord.Body), &s3Event); err != nil {
-			return fmt.Errorf("decoding sqs body as an s3 event: %w", err)
-		}
-		if len(s3Event.Records) == 0 {
-			return fmt.Errorf("sqs body contains no s3 records")
+		s3Event, err := decodeS3Notification(sqsRecord.Body)
+		if err != nil {
+			return fmt.Errorf("sqs body: %w", err)
 		}
 
 		for _, s3Record := range s3Event.Records {
 			event.Records = append(event.Records, Record{
 				EventSource:    sqsRecord.EventSource,
 				EventSourceArn: sqsRecord.EventSourceARN,
-				AWSRegion:      sqsRecord.AWSRegion,
+				AWSRegion:      cmp.Or(s3Record.AWSRegion, sqsRecord.AWSRegion),
 				SQS:            sqsRecord,
 				S3:             s3Record.S3,
 			})
 		}
 	}
 	return nil
+}
+
+// decodeS3Notification decodes an S3 event notification wrapped in an SNS
+// message or SQS body. The s3:TestEvent S3 sends when a notification is
+// first configured carries no records and decodes to an empty event rather
+// than failing the batch it arrives in.
+func decodeS3Notification(body string) (*events.S3Event, error) {
+	var s3Event events.S3Event
+	if err := json.Unmarshal([]byte(body), &s3Event); err != nil {
+		return nil, fmt.Errorf("decoding as an s3 event: %w", err)
+	}
+	if len(s3Event.Records) > 0 {
+		return &s3Event, nil
+	}
+	var probe struct {
+		Event string `json:"Event"`
+	}
+	if json.Unmarshal([]byte(body), &probe) == nil && probe.Event == "s3:TestEvent" {
+		return &s3Event, nil
+	}
+	return nil, fmt.Errorf("contains no s3 records")
 }

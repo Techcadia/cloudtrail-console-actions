@@ -32,10 +32,13 @@ type ObjectGetter interface {
 	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
 }
 
-// IsIgnoredKey reports whether the object key is CloudTrail housekeeping
-// (digests, Config snapshots) rather than a log file.
+// IsIgnoredKey reports whether the object key is not a management-event log
+// file: CloudTrail digests, Config snapshots, or CloudTrail Insights files
+// (anomaly summaries with no acting user to alert on).
 func IsIgnoredKey(key string) bool {
-	return strings.Contains(key, "/CloudTrail-Digest/") || strings.Contains(key, "/Config/")
+	return strings.Contains(key, "/CloudTrail-Digest/") ||
+		strings.Contains(key, "/CloudTrail-Insight/") ||
+		strings.Contains(key, "/Config/")
 }
 
 // Fetch downloads and decodes one CloudTrail log object. Ignored keys return
@@ -63,8 +66,13 @@ func Fetch(ctx context.Context, client ObjectGetter, bucket, key string) (*File,
 
 // Decode reads a CloudTrail log file, gunzipping when the stream carries the
 // gzip magic bytes — more reliable than trusting the object's Content-Type.
+//
+// Only bad bytes are ErrMalformed. A failure reading the stream itself (a
+// connection reset mid-body) is returned unwrapped so the invocation fails
+// and the object is retried rather than silently skipped.
 func Decode(r io.Reader) (*File, error) {
-	buffered := bufio.NewReader(r)
+	src := &readErrRecorder{r: r}
+	buffered := bufio.NewReader(src)
 
 	magic, err := buffered.Peek(2)
 	if err != nil && err != io.EOF {
@@ -75,6 +83,9 @@ func Decode(r io.Reader) (*File, error) {
 	if len(magic) == 2 && magic[0] == 0x1f && magic[1] == 0x8b {
 		gz, err := gzip.NewReader(buffered)
 		if err != nil {
+			if src.err != nil {
+				return nil, fmt.Errorf("reading log file: %w", src.err)
+			}
 			return nil, fmt.Errorf("extracting gzipped log file: %w: %w", ErrMalformed, err)
 		}
 		defer gz.Close()
@@ -83,7 +94,25 @@ func Decode(r io.Reader) (*File, error) {
 
 	var file File
 	if err := json.NewDecoder(body).Decode(&file); err != nil {
+		if src.err != nil {
+			return nil, fmt.Errorf("reading log file: %w", src.err)
+		}
 		return nil, fmt.Errorf("decoding CloudTrail log file: %w: %w", ErrMalformed, err)
 	}
 	return &file, nil
+}
+
+// readErrRecorder remembers the first non-EOF error from the underlying
+// stream, so decode failures can be told apart from transport failures.
+type readErrRecorder struct {
+	r   io.Reader
+	err error
+}
+
+func (rr *readErrRecorder) Read(p []byte) (int, error) {
+	n, err := rr.r.Read(p)
+	if err != nil && err != io.EOF && rr.err == nil {
+		rr.err = err
+	}
+	return n, err
 }

@@ -64,6 +64,37 @@ func TestDecodeErrors(t *testing.T) {
 	}
 }
 
+// failingReader yields prefix, then fails like a connection reset mid-body.
+type failingReader struct {
+	prefix []byte
+	done   bool
+}
+
+func (f *failingReader) Read(p []byte) (int, error) {
+	if !f.done {
+		f.done = true
+		return copy(p, f.prefix), nil
+	}
+	return 0, errors.New("connection reset by peer")
+}
+
+func TestDecodeTransportErrorIsNotMalformed(t *testing.T) {
+	// A transport failure must propagate so the invocation is retried; only
+	// bad bytes are poison.
+	for name, prefix := range map[string][]byte{
+		"plain": []byte(logFile[:40]),
+		"gzip":  gzipped(t, logFile)[:30],
+	} {
+		_, err := Decode(&failingReader{prefix: prefix})
+		if err == nil || errors.Is(err, ErrMalformed) {
+			t.Errorf("%s: want a non-ErrMalformed error, got %v", name, err)
+		}
+		if err != nil && !strings.Contains(err.Error(), "connection reset") {
+			t.Errorf("%s: error should carry the cause, got %v", name, err)
+		}
+	}
+}
+
 func TestIsIgnoredKey(t *testing.T) {
 	tests := []struct {
 		key  string
@@ -71,6 +102,7 @@ func TestIsIgnoredKey(t *testing.T) {
 	}{
 		{"AWSLogs/111/CloudTrail-Digest/us-east-1/2026/07/07/x.json.gz", true},
 		{"AWSLogs/111/Config/us-east-1/2026/07/07/x.json.gz", true},
+		{"AWSLogs/111/CloudTrail-Insight/us-east-1/2026/07/07/x.json.gz", true},
 		{"AWSLogs/111/CloudTrail/us-east-1/2026/07/07/x.json.gz", false},
 	}
 	for _, tt := range tests {

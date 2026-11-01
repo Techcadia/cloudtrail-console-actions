@@ -2,6 +2,7 @@ package notify
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"log/slog"
 	"testing"
@@ -48,7 +49,7 @@ func group(count int) *collector.Group {
 func TestLogSinkEmitsEventRecord(t *testing.T) {
 	var buf bytes.Buffer
 	sink := &LogSink{Logger: slog.New(slog.NewJSONHandler(&buf, nil))}
-	sink.Send(group(1))
+	sink.Send(context.Background(), group(1))
 
 	var fields map[string]any
 	if err := json.Unmarshal(buf.Bytes(), &fields); err != nil {
@@ -80,7 +81,7 @@ func TestLogSinkFollowsCustomOutputs(t *testing.T) {
 
 	g := group(1)
 	g.Outputs = map[string]any{"who": "jane", "did_what": "PutUserPolicy"}
-	sink.Send(g)
+	sink.Send(context.Background(), g)
 
 	var fields map[string]any
 	if err := json.Unmarshal(buf.Bytes(), &fields); err != nil {

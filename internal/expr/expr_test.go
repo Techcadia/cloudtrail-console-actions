@@ -2,6 +2,7 @@ package expr
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -19,6 +20,7 @@ func record() map[string]any {
 		},
 		"requestParameters": map[string]any{
 			"sessionId": "john.doe-0e95d1a239405ca7b",
+			"x-amz-acl": "private",
 		},
 		"preprocess": map[string]any{
 			"eventName": "GetAccountPreferences",
@@ -128,6 +130,21 @@ func TestCompileAndEval(t *testing.T) {
 			want:     nil,
 		},
 		{
+			name:     "quoted field name",
+			template: `{{ requestParameters."x-amz-acl" }}`,
+			want:     "private",
+		},
+		{
+			name:     "quoted head name",
+			template: `{{ "event-id" || 'none' }}`,
+			want:     "none",
+		},
+		{
+			name:     "escaped quote in string literal",
+			template: `{{ errorCode || 'it\'s \\ fine' }}`,
+			want:     `it's \ fine`,
+		},
+		{
 			name:     "keys of an object are sorted",
 			template: "{{ keys(userIdentity) }}",
 			want:     []string{"invokedBy", "principalId", "userName"},
@@ -196,6 +213,8 @@ func TestCompileErrors(t *testing.T) {
 		{"trailing garbage", "{{ eventSource eventName }}"},
 		{"wrong arity", "{{ contains(eventName) }}"},
 		{"wrong arity for keys", "{{ keys(userIdentity, eventName) }}"},
+		{"unterminated quoted name", `{{ requestParameters."x-amz-acl }}`},
+		{"empty dot", "{{ requestParameters. }}"},
 	}
 
 	for _, tt := range tests {
@@ -227,5 +246,12 @@ func TestEvalNilScopeValues(t *testing.T) {
 	got := e.Eval(map[string]any{"userIdentity": map[string]any{"invokedBy": nil}})
 	if got != "" {
 		t.Errorf("got %#v, want empty string", got)
+	}
+}
+
+func TestMixedTextErrorMessage(t *testing.T) {
+	_, err := Compile("{{ eventSource }} suffix")
+	if err == nil || !strings.Contains(err.Error(), "may not be mixed") {
+		t.Errorf("err = %v, want the mixed-text error", err)
 	}
 }

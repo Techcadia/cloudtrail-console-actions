@@ -28,6 +28,10 @@ func TestEquals(t *testing.T) {
 		{"nil key never equals a value", Equals, "x", nil, false},
 		{"nil key does not equal empty string", Equals, "", nil, false},
 		{"int value vs json float64 key", Equals, 32, float64(32), true},
+		{"number vs numeric string", Equals, 32, "32", true},
+		{"strings compare exactly, not numerically", Equals, "1", "1.0", false},
+		{"zero-padded strings stay distinct", Equals, "012345678901", "12345678901", false},
+		{"identical numeric strings", Equals, "012345678901", "012345678901", true},
 		{"NotEquals inverts", NotEquals, "AWS Internal", "console", true},
 		{"NotEquals equal value", NotEquals, "AWS Internal", "AWS Internal", false},
 		{"NotEquals nil key", NotEquals, "", nil, true},
@@ -53,6 +57,7 @@ func TestSetOperators(t *testing.T) {
 	}{
 		{"AnyIn exact member", AnyIn, consoleAgents, "Coral/Jakarta", true},
 		{"AnyIn non-member", AnyIn, consoleAgents, "aws-cli/2.0", false},
+		{"AnyIn zero-padded member stays exact", AnyIn, []any{"0123"}, "123", false},
 		{"AnyIn prefix wildcard", AnyIn, []any{"Check*", "CreateCaseDraft"}, "CheckServiceHealth", true},
 		{"AnyIn suffix wildcard", AnyIn, []any{"*VirtualMFADevice"}, "CreateVirtualMFADevice", true},
 		{"AnyIn contains wildcard", AnyIn, []any{"*_Get*"}, "Payments_GetPreferences", true},
