@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://techcadia.dev/cloudtrail-console-actions/policy.schema.json",
+  "$id": "https://techcadia.com/cloudtrail-console-actions/policy.schema.json",
   "title": "CloudTrail Console Actions FilterPolicy",
   "description": "Schema for the declarative filter policy that replaces hardcoded FilterRecords logic. Sugar (bare strings, bracket paths) is desugared before validation.",
   "type": "object",
