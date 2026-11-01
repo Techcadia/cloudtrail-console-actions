@@ -1,0 +1,39 @@
+name: Go Tests
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  # The release workflow calls this so a tag is only built after tests pass.
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Go vet and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Check formatting
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt needed on: $unformatted"
+            exit 1
+          fi
+      - name: Check go.mod is tidy
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+      - name: Vet
+        run: make vet
+      - name: Test
+        run: go test -race ./...
