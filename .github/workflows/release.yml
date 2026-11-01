@@ -33,10 +33,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
+          # A tag with a pre-release suffix (v2.0.0-rc.1) is published as a
+          # pre-release so it never becomes the "latest" release.
+          prerelease=()
+          if [[ "$TAG" == *-* ]]; then
+            prerelease=(--prerelease)
+          fi
           # Attach to a release drafted for this tag, or create one.
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/function_*.zip dist/sha256sums.txt --clobber
           else
             gh release create "$TAG" dist/function_*.zip dist/sha256sums.txt \
-              --verify-tag --generate-notes --title "$TAG"
+              --verify-tag --generate-notes --title "$TAG" "${prerelease[@]}"
           fi

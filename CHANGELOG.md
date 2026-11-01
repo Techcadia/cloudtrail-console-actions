@@ -6,8 +6,8 @@ All notable changes to this project are documented here. The format is based on
 ## [2.0.0] (unreleased)
 
 v2 is a drop-in replacement for v0.4.0: the same Terraform module, `Event` log
-fields and `SLACK_*` variables, and the embedded default policy makes the same
-filtering decisions apart from the changes listed below.
+field names and `SLACK_*` variables, and the embedded default policy makes the
+same filtering decisions apart from the changes listed below.
 
 ### Changed
 
@@ -16,8 +16,12 @@ filtering decisions apart from the changes listed below.
   v0.4.0 ruleset is embedded as the default and can be overridden with
   `--config-file` / `CCA_POLICY_FILE` without recompiling.
 - **Log format** is slog-style (`"level":"INFO"`) instead of logrus-style
-  (`"level":"info"`). The `Event` log contract (`msg == "Event"`, field names)
-  is unchanged.
+  (`"level":"info"`). The `Event` line keeps `msg == "Event"` and every v0
+  field name, with two value changes: `event_name` is the raw event name
+  (v0 logged the Slack text, `*PutUserPolicy*` or `3x *PutUserPolicy*`), and
+  `event_time` is the record's RFC 3339 `eventTime` (v0 logged a display
+  string such as `2026-07-07 12:00:00 ... 13:30:00`). New fields:
+  `aws_region`, `error_code` and `identity_account_id`.
 - **Security writes always alert.** A `keep` rule emits `DeleteTrail`,
   `StopLogging`, `UpdateTrail`, `PutUserPolicy`, `DeleteFlowLogs`, GuardDuty
   `DeleteDetector`, `DisableSecurityHub`, and AWS Config
@@ -41,6 +45,10 @@ filtering decisions apart from the changes listed below.
   within the invocation deadline.
 - Terraform: optional `logs` variable to manage the Lambda log group
   (retention, class, KMS key) in Terraform.
+- Terraform: optional `policy` variable that deploys a custom FilterPolicy as
+  a Lambda layer; unset keeps the embedded default.
+- Terraform: the modules declare their minimum versions (Terraform 1.3, AWS
+  provider 6.0, archive provider 2.4).
 - Release workflow: tagged releases publish `function_arm64.zip`,
   `function_amd64.zip` and `sha256sums.txt`.
 
