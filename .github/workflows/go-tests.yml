@@ -38,7 +38,7 @@ jobs:
       - name: Test
         run: go test -race ./...
 
-  yamllint:
+  policy-lint:
     name: Lint policy YAML
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -46,3 +46,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: yamllint
         run: pipx run --spec yamllint==1.35.1 yamllint --strict internal/policy/default.yaml .yamllint
+      # Keeps policy.schema.json (used by editors) in step with the default policy.
+      - name: Validate against policy.schema.json
+        run: pipx run --spec check-jsonschema==0.29.4 check-jsonschema --schemafile policy.schema.json internal/policy/default.yaml

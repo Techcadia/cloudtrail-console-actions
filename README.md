@@ -119,7 +119,9 @@ outputs:               # projection of emitted records to the log/Slack schema
 
 Quote account IDs and other zero-padded values (`"012345670123"`); the loader rejects unquoted ones because YAML would read them as numbers.
 
-**Outputs contract:** every `outputs:` field lands on the `Event` log line. The Slack notifier reads `event_source`, `user_name`, `account_id`, `error_code`, `event_id` and `aws_region`; override them to change what notifications show. Its headline event name is `preprocess.eventName` (the grouping key), not the `event_name` output.
+**Outputs contract:** every `outputs:` field lands on the `Event` log line. Alerts are grouped by `preprocess.eventName`, `preprocess.userName` and the `account_id`, `event_source` and `error_code` outputs, and timed and linked by `event_time` and `event_id`, so every policy must define those; `--validate-only` reports any that are missing. The Slack notifier also reads `user_name` and `aws_region`; override any of them to change what notifications show. Its headline event name is `preprocess.eventName`, not the `event_name` output.
+
+**Editor support:** the default policy starts with a `yaml-language-server` comment pointing at [policy.schema.json](./policy.schema.json), so editors with a YAML language server (the VS Code and JetBrains YAML plugins) autocomplete and check a policy dumped from it.
 
 ## Observability
 

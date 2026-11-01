@@ -5,18 +5,20 @@
   "description": "Schema for the declarative filter policy that replaces hardcoded FilterRecords logic. Sugar (bare strings, bracket paths) is desugared before validation.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["apiVersion", "kind", "filters"],
+  "required": ["apiVersion", "kind", "preprocess", "filters", "outputs"],
   "properties": {
     "apiVersion": { "const": "cca/v1" },
     "kind": { "const": "FilterPolicy" },
     "preprocess": {
       "type": "object",
-      "description": "Working variables (preprocess.*) computed before filtering.",
+      "description": "Working variables (preprocess.*) computed before filtering. eventName and userName are required: alerts are grouped by them.",
+      "required": ["eventName", "userName"],
       "additionalProperties": { "$ref": "#/$defs/outputField" }
     },
     "outputs": {
       "type": "object",
-      "description": "Projection of an emitted record to the log/Slack schema.",
+      "description": "Projection of an emitted record to the log/Slack schema. The listed fields are required: alerts are grouped, timed and linked by them.",
+      "required": ["account_id", "event_source", "event_id", "event_time", "error_code"],
       "additionalProperties": { "$ref": "#/$defs/outputField" }
     },
     "keep": {
@@ -54,7 +56,8 @@
       "properties": {
         "key": {
           "type": "string",
-          "description": "A {{ }} template expression resolved against the record and preprocess.*: a dotted path with optional [n] indexing and '|| fallback', plus trimPrefix/contains/split. NOT JMESPath; see docs/policy-language.md. Invalid or unresolvable paths evaluate to null (falsy), they do not error."
+          "pattern": "^\\s*\\{\\{.*\\}\\}\\s*$",
+          "description": "A {{ }} template expression resolved against the record and preprocess.*: a dotted path (\"quoted\" names for fields like x-amz-acl) with optional [n] indexing and '|| fallback', plus trimPrefix/contains/split/keys. NOT JMESPath; see docs/policy-language.md. Unresolvable paths evaluate to null (falsy), they do not error."
         },
         "operator": { "$ref": "#/$defs/operator" },
         "value": {

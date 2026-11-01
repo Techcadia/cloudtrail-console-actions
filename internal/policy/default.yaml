@@ -1,3 +1,5 @@
+# yamllint disable-line rule:line-length
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Techcadia/cloudtrail-console-actions/main/policy.schema.json
 ---
 # CloudTrail Console Actions: default filter policy
 # Faithful translation of the v0.4.0 `FilterRecords` ruleset, baked into
@@ -450,10 +452,11 @@ filters:
           value: ['console.*.amazonaws.com', 'signin.*.amazonaws.com', '(?i)aws[\s-]internal']
 
 # ── Stage 3: emitted projection ──────────────────────────────────────────────
-# Every field lands on the "Event" log line. The Slack notifier reads
-# event_source, user_name, account_id, error_code, event_id and aws_region;
-# override them here to change what notifications show. Slack's headline
-# event name is preprocess.eventName (the grouping key), not event_name, and
+# Every field lands on the "Event" log line. Alerts are grouped by
+# preprocess.eventName, preprocess.userName, account_id, event_source and
+# error_code, and timed and linked by event_time and event_id, so a policy
+# must define all of them. Slack also reads user_name and aws_region; its
+# headline event name is preprocess.eventName, not event_name, and
 # SLACK_NAME_<accountId> lookups key on account_id.
 outputs:
   event_source: "{{ eventSource }}"
