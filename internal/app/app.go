@@ -5,11 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/collector"
 	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/engine"
 	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/event"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/policy"
 	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/trail"
 )
 
@@ -26,6 +29,36 @@ type App struct {
 	// Alert receives every flushed group, with the invocation's context so
 	// sinks honour the Lambda deadline.
 	Alert func(context.Context, *collector.Group)
+}
+
+// Alerts are grouped, timed and linked by these policy fields, so every
+// policy must define them.
+var (
+	requiredPreprocess = []string{"eventName", "userName"}
+	requiredOutputs    = []string{"account_id", "event_source", "error_code", "event_id", "event_time"}
+)
+
+// CheckPolicy reports the fields the alert pipeline reads that p does not
+// define.
+func CheckPolicy(p *policy.Policy) error {
+	has := func(fields policy.Fields, name string) bool {
+		return slices.ContainsFunc(fields, func(f policy.Field) bool { return f.Name == name })
+	}
+	var missing []string
+	for _, name := range requiredPreprocess {
+		if !has(p.Preprocess, name) {
+			missing = append(missing, "preprocess."+name)
+		}
+	}
+	for _, name := range requiredOutputs {
+		if !has(p.Outputs, name) {
+			missing = append(missing, "outputs."+name)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("policy must define the fields alerts are grouped by: %s", strings.Join(missing, ", "))
+	}
+	return nil
 }
 
 // Handle is the Lambda entrypoint.
@@ -98,54 +131,24 @@ func (a *App) processRecord(ctx context.Context, record map[string]any, src even
 		return
 	}
 
-	eventTime, err := time.Parse(time.RFC3339, str(record["eventTime"]))
+	e := collector.Entry{
+		Record:    record,
+		Outputs:   d.Outputs,
+		UserName:  collector.Text(d.Preprocess["userName"]),
+		EventName: collector.Text(d.Preprocess["eventName"]),
+		Source:    src,
+	}
+	e.AccountID = e.Output("account_id")
+	e.EventSource = e.Output("event_source")
+	e.ErrorCode = e.Output("error_code")
+	e.EventID = e.Output("event_id")
+
+	eventTime, err := time.Parse(time.RFC3339, e.Output("event_time"))
 	if err != nil {
-		a.Logger.LogAttrs(ctx, slog.LevelWarn, "unparseable eventTime; using zero time",
-			slog.Any("event_id", record["eventID"]),
-			slog.Any("event_time", record["eventTime"]))
+		a.Logger.LogAttrs(ctx, slog.LevelWarn, "unparseable event_time; using zero time",
+			slog.String("event_id", e.EventID),
+			slog.String("event_time", e.Output("event_time")))
 	}
-	errorCode, _ := record["errorCode"].(string)
-	col.Add(collector.Entry{
-		Record:      record,
-		Outputs:     d.Outputs,
-		AccountID:   strOr(d.Outputs["account_id"], record["recipientAccountId"]),
-		EventSource: str(record["eventSource"]),
-		UserName:    strOr(d.Preprocess["userName"], pathStr(record, "userIdentity", "principalId")),
-		EventName:   strOr(d.Preprocess["eventName"], record["eventName"]),
-		ErrorCode:   errorCode,
-		EventID:     str(record["eventID"]),
-		Time:        eventTime,
-		Source:      src,
-	})
-}
-
-// strOr stringifies the first non-nil, non-empty value; custom policies may
-// omit the preprocess fields the collector groups by.
-func strOr(v, fallback any) string {
-	if s := str(v); s != "" {
-		return s
-	}
-	return str(fallback)
-}
-
-func str(v any) string {
-	if v == nil {
-		return ""
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return fmt.Sprint(v)
-}
-
-func pathStr(record map[string]any, keys ...string) any {
-	var v any = record
-	for _, k := range keys {
-		m, ok := v.(map[string]any)
-		if !ok {
-			return nil
-		}
-		v = m[k]
-	}
-	return v
+	e.Time = eventTime
+	col.Add(e)
 }

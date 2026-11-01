@@ -161,3 +161,32 @@ func TestHandleDebugTracesDrops(t *testing.T) {
 		t.Errorf("debug output does not explain skipped rules:\n%s", out)
 	}
 }
+
+func TestCheckPolicy(t *testing.T) {
+	if err := CheckPolicy(policy.Default()); err != nil {
+		t.Errorf("default policy: %v", err)
+	}
+
+	p, err := policy.Parse([]byte(`
+apiVersion: cca/v1
+kind: FilterPolicy
+preprocess:
+  eventName: "{{ eventName }}"
+filters:
+  - name: f
+    action: skip
+    match:
+      all:
+        - { key: "{{ eventName }}", operator: Equals, value: x }
+outputs:
+  account_id: "{{ recipientAccountId }}"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = CheckPolicy(p)
+	want := "preprocess.userName, outputs.event_source, outputs.error_code, outputs.event_id, outputs.event_time"
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("err = %v, want it to list %s", err, want)
+	}
+}

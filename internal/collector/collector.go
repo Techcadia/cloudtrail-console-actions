@@ -6,23 +6,41 @@
 package collector
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/event"
 )
 
-// Entry is one emitted record with everything the sinks need.
+// Entry is one emitted record with everything the sinks need. The grouping
+// fields all come from the policy's results (see app.CheckPolicy).
 type Entry struct {
 	Record      map[string]any // the raw CloudTrail record
 	Outputs     map[string]any // the policy's outputs projection
 	AccountID   string         // the account_id output; part of the group key
-	EventSource string         // raw eventSource; part of the group key
+	EventSource string         // the event_source output; part of the group key
 	UserName    string         // preprocess.userName; part of the group key
 	EventName   string         // preprocess.eventName; part of the group key
-	ErrorCode   string         // raw errorCode, "" when absent
-	EventID     string
-	Time        time.Time
-	Source      event.Record // the S3 object the record came from
+	ErrorCode   string         // the error_code output; part of the group key
+	EventID     string         // the event_id output
+	Time        time.Time      // the event_time output
+	Source      event.Record   // the S3 object the record came from
+}
+
+// Output returns the named outputs field as text, "" when absent.
+func (e *Entry) Output(name string) string { return Text(e.Outputs[name]) }
+
+// Text renders a policy value as a string: strings as-is, nil as "", and
+// anything else in fmt's default format.
+func Text(v any) string {
+	switch t := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return t
+	default:
+		return fmt.Sprint(t)
+	}
 }
 
 // Group is one alert: a single record, or several deduplicated ones.

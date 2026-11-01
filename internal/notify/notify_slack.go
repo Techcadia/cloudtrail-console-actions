@@ -2,6 +2,7 @@ package notify
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -56,16 +57,16 @@ type mrkdwn struct {
 // cannot inject links or mentions. ctx bounds the post and any retries.
 func (s *Slack) Send(ctx context.Context, g *collector.Group) error {
 	name := s.displayName(g)
-	userName := outputStr(g, "user_name", g.UserName)
+	userName := cmp.Or(g.Output("user_name"), g.UserName)
 	eventName := fmt.Sprintf("*%s*", escapeMrkdwn(g.EventName))
 	timeDisplay := g.First.Format("2006-01-02 15:04:05")
-	region := url.QueryEscape(outputStr(g, "aws_region", ""))
+	region := url.QueryEscape(g.Output("aws_region"))
 	// userName and the timestamps carry ':' '@' '+' and spaces (assumed-role
 	// and SSO principals especially), which must be escaped or the console
 	// deep link breaks.
 	link := fmt.Sprintf(
 		"https://us-east-1.console.aws.amazon.com/cloudtrailv2/home?region=%s#/events?EventId=%s",
-		region, url.QueryEscape(outputStr(g, "event_id", "")))
+		region, url.QueryEscape(g.Output("event_id")))
 
 	if g.Count > 1 {
 		eventName = fmt.Sprintf("%dx *%s*", g.Count, escapeMrkdwn(g.EventName))
@@ -81,7 +82,7 @@ func (s *Slack) Send(ctx context.Context, g *collector.Group) error {
 	}
 
 	errorCode := ""
-	if ec := outputStr(g, "error_code", ""); ec != "" {
+	if ec := g.Output("error_code"); ec != "" {
 		errorCode = fmt.Sprintf(" - `%s`", escapeMrkdwn(ec))
 	}
 
@@ -93,7 +94,7 @@ func (s *Slack) Send(ctx context.Context, g *collector.Group) error {
 				Type: "section",
 				Text: &mrkdwn{
 					Type: "mrkdwn",
-					Text: fmt.Sprintf("%s - %s%s", eventName, escapeMrkdwn(outputStr(g, "event_source", "")), errorCode),
+					Text: fmt.Sprintf("%s - %s%s", eventName, escapeMrkdwn(g.Output("event_source")), errorCode),
 				},
 			},
 			{
@@ -120,22 +121,13 @@ func (s *Slack) Send(ctx context.Context, g *collector.Group) error {
 // (emoji, formatting); the account_id fallback comes from the record and is
 // escaped.
 func (s *Slack) displayName(g *collector.Group) string {
-	if v, ok := s.LookupEnv("SLACK_NAME_" + outputStr(g, "account_id", "")); ok && v != "" {
+	if v, ok := s.LookupEnv("SLACK_NAME_" + g.Output("account_id")); ok && v != "" {
 		return v
 	}
 	if v, ok := s.LookupEnv("SLACK_NAME"); ok && v != "" {
 		return v
 	}
-	return escapeMrkdwn(outputStr(g, "account_id", ""))
-}
-
-// outputStr reads one projection field, tolerating custom policies that omit
-// it.
-func outputStr(g *collector.Group, key, fallback string) string {
-	if v, ok := g.Outputs[key]; ok && v != nil {
-		return fmt.Sprintf("%v", v)
-	}
-	return fallback
+	return escapeMrkdwn(g.Output("account_id"))
 }
 
 // mrkdwnEscaper escapes the three characters Slack's mrkdwn treats as

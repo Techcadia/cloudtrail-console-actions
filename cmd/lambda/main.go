@@ -63,6 +63,9 @@ func run() error {
 		}
 		source = opts.PolicyFile
 	}
+	if err := app.CheckPolicy(pol); err != nil {
+		return fmt.Errorf("policy (%s): %w", source, err)
+	}
 	eng, err := engine.Compile(pol)
 	if err != nil {
 		return fmt.Errorf("compiling policy (%s): %w", source, err)
