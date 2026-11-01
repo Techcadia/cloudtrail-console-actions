@@ -37,3 +37,12 @@ jobs:
         run: make vet
       - name: Test
         run: go test -race ./...
+
+  yamllint:
+    name: Lint policy YAML
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: yamllint
+        run: pipx run --spec yamllint==1.35.1 yamllint --strict internal/policy/default.yaml .yamllint

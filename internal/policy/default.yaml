@@ -1,3 +1,4 @@
+---
 # CloudTrail Console Actions: default filter policy
 # Faithful translation of the v0.4.0 `FilterRecords` ruleset, baked into
 # the binary. Override with --config-file or CCA_POLICY_FILE.
@@ -49,7 +50,7 @@ preprocess:
     - when:
         all:
           - { key: "{{ eventSource }}", operator: Equals, value: ssm.amazonaws.com }
-          - { key: "{{ eventName }}",   operator: Equals, value: OpenDataChannel }
+          - { key: "{{ eventName }}", operator: Equals, value: OpenDataChannel }
           - { key: "{{ requestParameters.sessionId || '' }}", operator: NotEquals, value: "" }
       value: "{{ requestParameters.sessionId }}"
     - when:
@@ -84,11 +85,11 @@ keep:
             - UpdateTrail
             - PutUserPolicy
             - DeleteFlowLogs
-            - DeleteDetector               # GuardDuty
+            - DeleteDetector  # GuardDuty
             - DisableSecurityHub
             - StopConfigurationRecorder
             - DeleteConfigurationRecorder
-            - DeleteDeliveryChannel        # AWS Config
+            - DeleteDeliveryChannel  # AWS Config
         - { key: "{{ userIdentity.invokedBy || '' }}", operator: NotEquals, value: "AWS Internal" }
 
 # ── Stage 2: skip rules (default action is EMIT; these drop noise) ────────────
@@ -102,7 +103,7 @@ filters:
       all:
         - { key: "{{ userIdentity.invokedBy || '' }}", operator: Equals, value: "AWS Internal" }
 
-  - name: drop-codecommit-all          # v0: codecommit short-circuits everything
+  - name: drop-codecommit-all  # v0: codecommit short-circuits everything
     action: skip
     match:
       all:
@@ -116,37 +117,37 @@ filters:
       all:
         - { key: "{{ eventSource }}", operator: Equals, value: cognito-idp.amazonaws.com }
       any:
-        - { key: "{{ keys(userIdentity) }}", operator: AllIn,  value: [accountId] }
-        - { key: "{{ userIdentity.type }}",  operator: Equals, value: Unknown }
+        - { key: "{{ keys(userIdentity) }}", operator: AllIn, value: [accountId] }
+        - { key: "{{ userIdentity.type }}", operator: Equals, value: Unknown }
 
-  - name: drop-billingconsole-noise    # matched against the trimmed name
+  - name: drop-billingconsole-noise  # matched against the trimmed name
     action: skip
     match:
       all:
-        - { key: "{{ eventSource }}",     operator: Equals, value: billingconsole.amazonaws.com }
-        - { key: "{{ preprocess.eventName }}",  operator: AnyIn,  value: [AssessSorChangeImpact, ConvertCurrencies] }
+        - { key: "{{ eventSource }}", operator: Equals, value: billingconsole.amazonaws.com }
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: [AssessSorChangeImpact, ConvertCurrencies] }
 
   - name: drop-support-console-noise
     action: skip
     match:
       all:
-        - { key: "{{ eventSource }}",     operator: Equals, value: support-console.amazonaws.com }
-        - { key: "{{ preprocess.eventName }}",  operator: AnyIn,  value: ["Check*", CreateCaseDraft] }
+        - { key: "{{ eventSource }}", operator: Equals, value: support-console.amazonaws.com }
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: ["Check*", CreateCaseDraft] }
 
   - name: drop-payments-reads
     action: skip
     match:
       all:
-        - { key: "{{ eventSource }}",     operator: Equals, value: payments.amazonaws.com }
-        - { key: "{{ preprocess.eventName }}",  operator: AnyIn,  value: ["*_Get*", "*_BatchGet*", "*_List*"] }
+        - { key: "{{ eventSource }}", operator: Equals, value: payments.amazonaws.com }
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: ["*_Get*", "*_BatchGet*", "*_List*"] }
 
   - name: drop-q-error-chatter
     action: skip
     match:
       all:
-        - { key: "{{ eventSource }}",     operator: Equals, value: q.amazonaws.com }
-        - { key: "{{ errorCode || '' }}", operator: AnyIn,  value: [AccessDenied, ThrottlingException] }
-        - { key: "{{ preprocess.eventName }}",  operator: AnyIn,  value: [StartConversation, SendMessage] }
+        - { key: "{{ eventSource }}", operator: Equals, value: q.amazonaws.com }
+        - { key: "{{ errorCode || '' }}", operator: AnyIn, value: [AccessDenied, ThrottlingException] }
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: [StartConversation, SendMessage] }
 
   # ---- read-only verb ladder (the big switch) ----
 
@@ -214,7 +215,7 @@ filters:
       all:
         - { key: "{{ userIdentity.type }}", operator: Equals, value: Root }
 
-  - name: drop-virtual-mfa-device       # HasSuffix(en, "VirtualMFADevice")
+  - name: drop-virtual-mfa-device  # HasSuffix(en, "VirtualMFADevice")
     action: skip
     match:
       all:
@@ -244,88 +245,88 @@ filters:
     action: skip
     match:
       all:
-        - { key: "{{ eventSource }}",    operator: Equals, value: cognito-idp.amazonaws.com }
-        - { key: "{{ preprocess.eventName }}", operator: AnyIn,  value: ["AdminList*"] }
+        - { key: "{{ eventSource }}", operator: Equals, value: cognito-idp.amazonaws.com }
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: ["AdminList*"] }
 
-  - name: drop-cognito-get-suffix       # HasSuffix(ToLower(en), "get")
+  - name: drop-cognito-get-suffix  # HasSuffix(ToLower(en), "get")
     action: skip
     match:
       all:
-        - { key: "{{ eventSource }}",    operator: Equals,  value: cognito-idp.amazonaws.com }
+        - { key: "{{ eventSource }}", operator: Equals, value: cognito-idp.amazonaws.com }
         - { key: "{{ preprocess.eventName }}", operator: Matches, value: ['(?i)get$'] }
 
-  - name: drop-anonymous-initiateauth   # v0 guards on principalId only, not source
+  - name: drop-anonymous-initiateauth  # v0 guards on principalId only, not source
     action: skip
     match:
       all:
-        - { key: "{{ preprocess.eventName }}",            operator: Equals, value: InitiateAuth }
-        - { key: "{{ userIdentity.principalId }}",  operator: Equals, value: Anonymous }
+        - { key: "{{ preprocess.eventName }}", operator: Equals, value: InitiateAuth }
+        - { key: "{{ userIdentity.principalId }}", operator: Equals, value: Anonymous }
 
   - name: drop-eks-readonly-k8s-api
     action: skip
     match:
       all:
         - { key: "{{ preprocess.eventName }}", operator: Equals, value: AccessKubernetesApi }
-        - { key: "{{ readOnly }}",       operator: Equals, value: true }
+        - { key: "{{ readOnly }}", operator: Equals, value: true }
 
   # v0.2.x dropped only elasticfilesystem; v0.3.x added s3files.
   - name: drop-new-client-connection
     action: skip
     match:
       all:
-        - { key: "{{ eventSource }}",    operator: AnyIn,  value: [elasticfilesystem.amazonaws.com, s3files.amazonaws.com] }
+        - { key: "{{ eventSource }}", operator: AnyIn, value: [elasticfilesystem.amazonaws.com, s3files.amazonaws.com] }
         - { key: "{{ preprocess.eventName }}", operator: Equals, value: NewClientConnection }
 
   - name: drop-quicksight-query-database
     action: skip
     match:
       all:
-        - { key: "{{ eventSource }}",    operator: Equals, value: quicksight.amazonaws.com }
+        - { key: "{{ eventSource }}", operator: Equals, value: quicksight.amazonaws.com }
         - { key: "{{ preprocess.eventName }}", operator: Equals, value: QueryDatabase }
 
   - name: drop-sso-auth
     action: skip
     match:
       all:
-        - { key: "{{ eventSource }}",    operator: Equals, value: sso.amazonaws.com }
-        - { key: "{{ preprocess.eventName }}", operator: AnyIn,  value: [Federate, Authenticate, Logout] }
+        - { key: "{{ eventSource }}", operator: Equals, value: sso.amazonaws.com }
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: [Federate, Authenticate, Logout] }
 
   # v0.4.0: sign-in credential checks precede the UserAuthentication event.
   - name: drop-signin-credential-checks
     action: skip
     match:
       all:
-        - { key: "{{ eventSource }}",          operator: Equals, value: signin.amazonaws.com }
-        - { key: "{{ preprocess.eventName }}", operator: AnyIn,  value: [CredentialChallenge, CredentialVerification] }
+        - { key: "{{ eventSource }}", operator: Equals, value: signin.amazonaws.com }
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: [CredentialChallenge, CredentialVerification] }
 
   - name: drop-signin-external-idp
     action: skip
     match:
       all:
-        - { key: "{{ eventSource }}",                      operator: Equals, value: signin.amazonaws.com }
-        - { key: "{{ preprocess.eventName }}",                   operator: Equals, value: UserAuthentication }
+        - { key: "{{ eventSource }}", operator: Equals, value: signin.amazonaws.com }
+        - { key: "{{ preprocess.eventName }}", operator: Equals, value: UserAuthentication }
         - { key: "{{ additionalEventData.CredentialType }}", operator: Equals, value: EXTERNAL_IDP }
 
   - name: drop-logs-noise
     action: skip
     match:
       all:
-        - { key: "{{ eventSource }}",    operator: Equals, value: logs.amazonaws.com }
-        - { key: "{{ preprocess.eventName }}", operator: AnyIn,  value: [FilterLogEvents, PutQueryDefinition] }
+        - { key: "{{ eventSource }}", operator: Equals, value: logs.amazonaws.com }
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: [FilterLogEvents, PutQueryDefinition] }
 
-  - name: drop-ssm-session-suffix       # ssm:Start/Resume/TerminateSession
+  - name: drop-ssm-session-suffix  # ssm:Start/Resume/TerminateSession
     action: skip
     match:
       all:
-        - { key: "{{ eventSource }}",    operator: Equals, value: ssm.amazonaws.com }
-        - { key: "{{ preprocess.eventName }}", operator: AnyIn,  value: ["*Session"] }
+        - { key: "{{ eventSource }}", operator: Equals, value: ssm.amazonaws.com }
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: ["*Session"] }
 
   # v0.3.x addition: ssm-guiconnect cancels are operator noise.
   - name: drop-ssm-guiconnect-cancel
     action: skip
     match:
       all:
-        - { key: "{{ eventSource }}",    operator: Equals, value: ssm-guiconnect.amazonaws.com }
+        - { key: "{{ eventSource }}", operator: Equals, value: ssm-guiconnect.amazonaws.com }
         - { key: "{{ preprocess.eventName }}", operator: Equals, value: CancelConnection }
 
   # v0.3.x addition: Inspector2 telemetry heartbeats.
@@ -333,31 +334,31 @@ filters:
     action: skip
     match:
       all:
-        - { key: "{{ eventSource }}",    operator: Equals, value: inspector2-telemetry.amazonaws.com }
+        - { key: "{{ eventSource }}", operator: Equals, value: inspector2-telemetry.amazonaws.com }
         - { key: "{{ preprocess.eventName }}", operator: Equals, value: SendTelemetryEvent }
 
-  - name: drop-s3-elb-access-logs       # PutObject for ELB logs landing from AWS-owned accounts
+  - name: drop-s3-elb-access-logs  # PutObject for ELB logs landing from AWS-owned accounts
     action: skip
     match:
       all:
-        - { key: "{{ preprocess.eventName }}",          operator: Equals,  value: PutObject }
-        - { key: "{{ userIdentity.type }}",       operator: Equals,  value: AWSAccount }
-        - { key: "{{ requestParameters.key }}",   operator: Matches, value: ['AWSLogs/'] }
-        - { key: "{{ requestParameters.key }}",   operator: Matches, value: ['/elasticloadbalancing/'] }
+        - { key: "{{ preprocess.eventName }}", operator: Equals, value: PutObject }
+        - { key: "{{ userIdentity.type }}", operator: Equals, value: AWSAccount }
+        - { key: "{{ requestParameters.key }}", operator: Matches, value: ['AWSLogs/'] }
+        - { key: "{{ requestParameters.key }}", operator: Matches, value: ['/elasticloadbalancing/'] }
 
   - name: drop-cloudwatch-rdsosmetrics
     action: skip
     match:
       all:
-        - { key: "{{ preprocess.eventName }}",                    operator: AnyIn,  value: ["CreateLog*"] }
-        - { key: "{{ requestParameters.logGroupName }}",    operator: Equals, value: RDSOSMetrics }
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: ["CreateLog*"] }
+        - { key: "{{ requestParameters.logGroupName }}", operator: Equals, value: RDSOSMetrics }
 
   - name: drop-ec2-lambda-vpc-eni
     action: skip
     match:
       all:
-        - { key: "{{ preprocess.eventName }}",                  operator: AnyIn,  value: ["CreateNetworkInterface*"] }
-        - { key: "{{ requestParameters.description }}",   operator: Matches, value: ['^AWS Lambda VPC ENI-'] }
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: ["CreateNetworkInterface*"] }
+        - { key: "{{ requestParameters.description }}", operator: Matches, value: ['^AWS Lambda VPC ENI-'] }
 
   # v0 AssumeRole is A AND (B OR C OR D); B is itself (b1 AND b2). The flat
   # grammar can't nest AND inside OR, so it splits into two skip rules whose
@@ -366,8 +367,8 @@ filters:
     action: skip
     match:
       all:
-        - { key: "{{ preprocess.eventName }}",          operator: AnyIn,  value: ["AssumeRole*"] }
-        - { key: "{{ userAgent }}",               operator: Equals, value: "Coral/Netty4" }
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: ["AssumeRole*"] }
+        - { key: "{{ userAgent }}", operator: Equals, value: "Coral/Netty4" }
         - key: "{{ userIdentity.invokedBy || '' }}"
           operator: AnyIn
           value:
@@ -380,15 +381,15 @@ filters:
     action: skip
     match:
       all:
-        - { key: "{{ preprocess.eventName }}",    operator: AnyIn, value: ["AssumeRole*"] }
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: ["AssumeRole*"] }
         - { key: "{{ userIdentity.type }}", operator: AnyIn, value: [SAMLUser, AWSAccount] }
 
-  - name: drop-batch-stepfunctions-submitjob   # fingerprint: 32-char all-letter userName
+  - name: drop-batch-stepfunctions-submitjob  # fingerprint: 32-char all-letter userName
     action: skip
     match:
       all:
-        - { key: "{{ preprocess.eventName }}", operator: Equals,  value: SubmitJob }
-        - { key: "{{ preprocess.userName }}",  operator: Matches, value: ['^[a-zA-Z]{32}$'] }
+        - { key: "{{ preprocess.eventName }}", operator: Equals, value: SubmitJob }
+        - { key: "{{ preprocess.userName }}", operator: Matches, value: ['^[a-zA-Z]{32}$'] }
 
   # ---- user-agent gate (the inverted switch: drop everything not console-like) ----
 
@@ -413,7 +414,12 @@ filters:
       any:
         - key: "{{ userAgent }}"
           operator: AnyIn
-          value: [console.amazonaws.com, signin.amazonaws.com, "Coral/Jakarta", "Coral/Netty4", "AWS CloudWatch Console"]
+          value:
+            - console.amazonaws.com
+            - signin.amazonaws.com
+            - Coral/Jakarta
+            - Coral/Netty4
+            - AWS CloudWatch Console
         - key: "{{ userAgent }}"
           operator: AnyIn
           value: ["AWS Signin*", "S3Console/*", "[S3Console*", "Mozilla/*", "[Mozilla/*"]
@@ -431,14 +437,14 @@ filters:
 # SLACK_NAME_<accountId> lookups key on account_id.
 outputs:
   event_source: "{{ eventSource }}"
-  event_name:   "{{ eventName }}"          # raw record field, NOT the trimmed preprocess.eventName
-  event_time:   "{{ eventTime }}"
-  event_id:     "{{ eventID }}"
-  aws_region:   "{{ awsRegion }}"
-  principal:    "{{ userIdentity.principalId }}"
-  user_agent:   "{{ userAgent }}"
-  user_name:    "{{ preprocess.userName }}"
-  error_code:   "{{ errorCode || '' }}"
+  event_name: "{{ eventName }}"  # raw record field, NOT the trimmed preprocess.eventName
+  event_time: "{{ eventTime }}"
+  event_id: "{{ eventID }}"
+  aws_region: "{{ awsRegion }}"
+  principal: "{{ userIdentity.principalId }}"
+  user_agent: "{{ userAgent }}"
+  user_name: "{{ preprocess.userName }}"
+  error_code: "{{ errorCode || '' }}"
 
   # The acting identity's own account (log line only).
   identity_account_id: "{{ userIdentity.accountId || '' }}"
