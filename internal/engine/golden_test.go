@@ -12,14 +12,14 @@ import (
 	"github.com/Techcadia/cloudtrail-console-actions/internal/policy"
 )
 
-// The golden parity suite proves the embedded v2 policy reproduces the v1
+// The golden parity suite proves the embedded v2 policy reproduces the v0
 // FilterRecords EMIT/DROP decision (and userName derivation) over a corpus of
-// realistic records: every (eventSource, eventName) pair a v1 rule cares
+// realistic records: every (eventSource, eventName) pair a v0 rule cares
 // about, crossed with user agents, identities, request parameters and error
 // codes.
 //
 // The single intended divergence is the keep: block. Security-critical writes
-// are emitted even when v1 would have dropped them, and this is asserted
+// are emitted even when v0 would have dropped them, and this is asserted
 // explicitly.
 
 // keepListed are the preprocess.eventName values the default keep rule vetoes.
@@ -38,8 +38,8 @@ var keepListed = map[string]bool{
 
 type pair struct{ source, name string }
 
-// pairs covers every branch of v1 FilterRecords plus emit controls. Names are
-// kept realistic for their source: v1's first-match-wins switch and v2's
+// pairs covers every branch of v0 FilterRecords plus emit controls. Names are
+// kept realistic for their source: v0's first-match-wins switch and v2's
 // union semantics only diverge on pathological combinations (e.g. an
 // "AdminList*Session" event on ssm) that CloudTrail does not produce.
 var pairs = []pair{
@@ -152,7 +152,7 @@ var pairs = []pair{
 	{"iam.amazonaws.com", "SendTelemetryEvent"},
 	{"batch.amazonaws.com", "SubmitJob"},
 
-	// keep-listed security writes (intended divergence from v1)
+	// keep-listed security writes (intended divergence from v0)
 	{"cloudtrail.amazonaws.com", "DeleteTrail"},
 	{"cloudtrail.amazonaws.com", "StopLogging"},
 	{"cloudtrail.amazonaws.com", "UpdateTrail"},
@@ -184,7 +184,7 @@ var userAgents = []string{
 	"aws-vpc-flow-logs.amazonaws.com",
 	"aws-cli/2.13.0 Python/3.11.4",
 	"APN/1.0 HashiCorp/1.0 Terraform/1.5.7",
-	// edge cases for v1's unescaped "console.*.amazonaws.com"-style regexes
+	// edge cases for v0's unescaped "console.*.amazonaws.com"-style regexes
 	"console-v2.amazonaws.com",
 	"signin-proxy.amazonaws.com",
 	"aws-sdk-js/3 consoleXamazonawsYcom",
@@ -193,7 +193,7 @@ var userAgents = []string{
 	"aws-vpc-flow-logs aws-internal/3",
 }
 
-// identities: userIdentity variants v1 branches on.
+// identities: userIdentity variants v0 branches on.
 var identities = []map[string]any{
 	{"type": "IAMUser", "principalId": "AIDAEXAMPLE", "userName": "jane.doe", "accountId": "111111111111"},
 	{"type": "AssumedRole", "principalId": "AROAEXAMPLE:jane@example.com", "accountId": "111111111111"},
@@ -205,7 +205,7 @@ var identities = []map[string]any{
 	{"type": "AssumedRole", "principalId": "AROAECS:svc", "invokedBy": "ecs-tasks.amazonaws.com", "accountId": "111111111111"},
 	// 32 alphabetic chars after the colon: the Step Functions SubmitJob fingerprint
 	{"type": "AssumedRole", "principalId": "AROASFN:abcdefghijklmnopqrstuvwxyzabcdef", "accountId": "111111111111"},
-	// cognito-idp identities v1 cannot attribute to a user (v0.4.0)
+	// cognito-idp identities v0.4.0 cannot attribute to a user
 	{"accountId": "111111111111"},
 	{"type": "Unknown", "principalId": "Anonymous"},
 }
@@ -258,36 +258,36 @@ func compileDefault(t *testing.T) *engine.Engine {
 
 func assertParity(t *testing.T, eng *engine.Engine, rec map[string]any) {
 	t.Helper()
-	v1Emit, v1User := v1Decision(rec)
+	v0Emit, v0User := v0Decision(rec)
 	d := eng.Evaluate(rec)
-	// v1 formats an absent principalId as fmt's "%!s(<nil>)"; v2 leaves it nil.
-	if v1User == "%!s(<nil>)" {
-		v1User = "<nil>"
+	// v0 formats an absent principalId as fmt's "%!s(<nil>)"; v2 leaves it nil.
+	if v0User == "%!s(<nil>)" {
+		v0User = "<nil>"
 	}
 
 	// The keep block is the one intended divergence: keep-listed writes must
-	// always emit, even when v1 dropped them, unless AWS itself made the
-	// call, where v1's AWS Internal drop still applies.
+	// always emit, even when v0 dropped them, unless AWS itself made the
+	// call, where v0's AWS Internal drop still applies.
 	userIdentity, _ := rec["userIdentity"].(map[string]any)
 	awsInternal := userIdentity["invokedBy"] == "AWS Internal"
 	if name, _ := d.Preprocess["eventName"].(string); keepListed[name] && !awsInternal {
 		if !d.Emit {
 			t.Errorf("keep-listed %q must emit, dropped by %q\nrecord: %s", name, d.DroppedBy, recordJSON(rec))
 		}
-		if v1Emit && fmt.Sprint(d.Preprocess["userName"]) != v1User {
-			t.Errorf("userName = %q, v1 = %q\nrecord: %s", d.Preprocess["userName"], v1User, recordJSON(rec))
+		if v0Emit && fmt.Sprint(d.Preprocess["userName"]) != v0User {
+			t.Errorf("userName = %q, v0 = %q\nrecord: %s", d.Preprocess["userName"], v0User, recordJSON(rec))
 		}
 		return
 	}
 
-	if d.Emit != v1Emit {
+	if d.Emit != v0Emit {
 		_, lines := eng.Explain(rec)
-		t.Errorf("emit = %v, v1 = %v\nrecord: %s\ntrace:\n  %s",
-			d.Emit, v1Emit, recordJSON(rec), joinLines(lines))
+		t.Errorf("emit = %v, v0 = %v\nrecord: %s\ntrace:\n  %s",
+			d.Emit, v0Emit, recordJSON(rec), joinLines(lines))
 		return
 	}
-	if d.Emit && fmt.Sprint(d.Preprocess["userName"]) != v1User {
-		t.Errorf("userName = %q, v1 = %q\nrecord: %s", d.Preprocess["userName"], v1User, recordJSON(rec))
+	if d.Emit && fmt.Sprint(d.Preprocess["userName"]) != v0User {
+		t.Errorf("userName = %q, v0 = %q\nrecord: %s", d.Preprocess["userName"], v0User, recordJSON(rec))
 	}
 }
 

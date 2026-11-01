@@ -7,12 +7,12 @@ import (
 	"sync"
 )
 
-// defaultYAML is the v1-compatibility ruleset baked into the deployment.
+// defaultYAML is the v0.4.0-compatible ruleset baked into the deployment.
 //
 //go:embed default.yaml
 var defaultYAML []byte
 
-// Default returns the embedded v1-compatibility policy. The document is part
+// Default returns the embedded v0.4.0-compatible policy. The document is part
 // of the binary, so a parse failure is a build defect and panics.
 var Default = sync.OnceValue(func() *Policy {
 	p, err := Parse(defaultYAML)

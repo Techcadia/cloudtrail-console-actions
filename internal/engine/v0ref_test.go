@@ -7,13 +7,13 @@ import (
 	"unicode"
 )
 
-// v1Decision is a test-only, line-faithful port of v1 FilterRecords
-// (main.go v0.4.0). It is the oracle for the golden parity tests: it returns
-// whether v1 would emit the record, and the userName v1 would report.
+// v0Decision is a test-only, line-faithful port of the v0.4.0 FilterRecords
+// (main.go). It is the oracle for the golden parity tests: it returns whether
+// v0 would emit the record, and the userName v0 would report.
 //
-// v1's Title() uses x/text cases.Title with NoLower; for single-token event
+// v0's Title() uses x/text cases.Title with NoLower; for single-token event
 // names that reduces to upper-casing the first rune.
-func v1Decision(record map[string]any) (emit bool, userName string) {
+func v0Decision(record map[string]any) (emit bool, userName string) {
 	userIdentity, _ := record["userIdentity"].(map[string]any)
 
 	if userIdentity["invokedBy"] == "AWS Internal" {

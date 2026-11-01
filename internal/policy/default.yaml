@@ -1,5 +1,5 @@
 # CloudTrail Console Actions: default filter policy
-# Faithful translation of the v1 `FilterRecords` ruleset (v0.4.0), baked into
+# Faithful translation of the v0.4.0 `FilterRecords` ruleset, baked into
 # the binary. Override with --config-file or CCA_POLICY_FILE.
 # Rules are {key, operator, value} conditions grouped under any:/all: blocks.
 # Expressions in {{ }}; use `|| ''` for optional fields.
@@ -15,7 +15,7 @@
 #                    `skip` rules combine as a UNION: any applicable skip drops.
 #   3. outputs     → project the emitted record to the log/Slack schema.
 #
-# Union semantics differ from v1's `switch` (first-match-wins, where a matched
+# Union semantics differ from v0's `switch` (first-match-wins, where a matched
 # case whose guard fails blocks later cases). For all realistic inputs the
 # EMIT/DROP decision is identical; the golden-test corpus is the gate that
 # proves it.
@@ -34,7 +34,7 @@ kind: FilterPolicy
 # ── Stage 1: preprocess (working values read by filters as preprocess.*) ───
 preprocess:
 
-  # v1: eventName is locally reassigned for billingconsole (TrimPrefix);
+  # v0: eventName is locally reassigned for billingconsole (TrimPrefix);
   # the *record* field stays raw. Filters match on this normalized copy.
   eventName:
     - when:
@@ -43,7 +43,7 @@ preprocess:
       value: "{{ trimPrefix(eventName, 'AWSPaymentPortalService.') }}"
     - value: "{{ eventName }}"
 
-  # v1 derives userName in this precedence (highest first):
+  # v0 derives userName in this precedence (highest first):
   #   ssm OpenDataChannel sessionId  >  userIdentity.userName  >  principalId after ':'  >  principalId
   userName:
     - when:
@@ -63,7 +63,7 @@ preprocess:
     - value: "{{ userIdentity.principalId }}"
 
 # ── Stage 2: keep (global veto, beats every skip) ────────────────────────────
-# Not present in v1. A keep rule that applies forces EMIT even if a skip rule
+# Not present in v0. A keep rule that applies forces EMIT even if a skip rule
 # matched. No `exclude` is permitted here, so the veto is absolute and the
 # policy stays provably terminating.
 #
@@ -102,7 +102,7 @@ filters:
       all:
         - { key: "{{ userIdentity.invokedBy || '' }}", operator: Equals, value: "AWS Internal" }
 
-  - name: drop-codecommit-all          # v1: codecommit short-circuits everything
+  - name: drop-codecommit-all          # v0: codecommit short-circuits everything
     action: skip
     match:
       all:
@@ -150,7 +150,7 @@ filters:
 
   # ---- read-only verb ladder (the big switch) ----
 
-  # v1 title-cases these (cases.NoLower) before HasPrefix, so the first
+  # v0 title-cases these (cases.NoLower) before HasPrefix, so the first
   # letter is case-insensitive but the rest is not: "get*"/"Get*" match, "GET*" does not.
   - name: drop-read-prefixes-title
     action: skip
@@ -204,7 +204,7 @@ filters:
             - REST.GET.OBJECT_LOCK_CONFIGURATION
             - AssumeRoleWithWebIdentity
 
-  # v1: ConsoleLogin is dropped unless the identity is Root.
+  # v0: ConsoleLogin is dropped unless the identity is Root.
   - name: drop-consolelogin-nonroot
     action: skip
     match:
@@ -220,7 +220,7 @@ filters:
       all:
         - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: ["*VirtualMFADevice"] }
 
-  # v1 does NOT guard these cloudshell lifecycle events by eventSource;
+  # v0 does NOT guard these cloudshell lifecycle events by eventSource;
   # they are dropped regardless of source. Kept faithful; revisit if undesired.
   - name: drop-cloudshell-lifecycle
     action: skip
@@ -254,7 +254,7 @@ filters:
         - { key: "{{ eventSource }}",    operator: Equals,  value: cognito-idp.amazonaws.com }
         - { key: "{{ preprocess.eventName }}", operator: Matches, value: ['(?i)get$'] }
 
-  - name: drop-anonymous-initiateauth   # v1 guards on principalId only, not source
+  - name: drop-anonymous-initiateauth   # v0 guards on principalId only, not source
     action: skip
     match:
       all:
@@ -268,7 +268,7 @@ filters:
         - { key: "{{ preprocess.eventName }}", operator: Equals, value: AccessKubernetesApi }
         - { key: "{{ readOnly }}",       operator: Equals, value: true }
 
-  # v1 v0.2.x dropped only elasticfilesystem; v0.3.x added s3files.
+  # v0.2.x dropped only elasticfilesystem; v0.3.x added s3files.
   - name: drop-new-client-connection
     action: skip
     match:
@@ -359,7 +359,7 @@ filters:
         - { key: "{{ preprocess.eventName }}",                  operator: AnyIn,  value: ["CreateNetworkInterface*"] }
         - { key: "{{ requestParameters.description }}",   operator: Matches, value: ['^AWS Lambda VPC ENI-'] }
 
-  # v1 AssumeRole is A AND (B OR C OR D); B is itself (b1 AND b2). The flat
+  # v0 AssumeRole is A AND (B OR C OR D); B is itself (b1 AND b2). The flat
   # grammar can't nest AND inside OR, so it splits into two skip rules whose
   # union reproduces the OR exactly.
   - name: drop-iam-assumerole-service-principal
@@ -417,7 +417,7 @@ filters:
         - key: "{{ userAgent }}"
           operator: AnyIn
           value: ["AWS Signin*", "S3Console/*", "[S3Console*", "Mozilla/*", "[Mozilla/*"]
-        # v1's dots are unescaped regex wildcards ("console-v2.amazonaws.com"
+        # v0's dots are unescaped regex wildcards ("console-v2.amazonaws.com"
         # matches); kept verbatim for parity.
         - key: "{{ userAgent }}"
           operator: Matches
@@ -443,7 +443,7 @@ outputs:
   # The acting identity's own account (log line only).
   identity_account_id: "{{ userIdentity.accountId || '' }}"
 
-  # v1: cognito-idp keeps userIdentity.accountId (the recipientAccountId
+  # v0: cognito-idp keeps userIdentity.accountId (the recipientAccountId
   # branch there is a discarded fmt.Sprintf, a dead no-op). Everything else
   # lets recipientAccountId override.
   account_id:
