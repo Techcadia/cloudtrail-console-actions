@@ -1,14 +1,15 @@
 resource "aws_lambda_function" "default" {
-  filename                       = lookup(var.lambda, "filepath", "${path.module}/../../../../dist/function.zip")
-  source_code_hash               = filebase64sha256(lookup(var.lambda, "filepath", "${path.module}/../../../../dist/function.zip"))
+  filename                       = lookup(var.lambda, "filepath", "${path.module}/../../../../dist/function_arm64.zip")
+  source_code_hash               = filebase64sha256(lookup(var.lambda, "filepath", "${path.module}/../../../../dist/function_arm64.zip"))
   function_name                  = var.name
   handler                        = lookup(var.lambda, "handler", "main")
   runtime                        = lookup(var.lambda, "runtime", "provided.al2023")
   timeout                        = lookup(var.lambda, "timeout", 15)
-  memory_size                    = lookup(var.lambda, "memory", 128)
+  memory_size                    = lookup(var.lambda, "memory", 256)
   reserved_concurrent_executions = lookup(var.lambda, "reserved_concurrent_executions", 10)
   role                           = aws_iam_role.default.arn
   architectures                  = lookup(var.lambda, "architectures", ["arm64"])
+  layers                         = aws_lambda_layer_version.policy[*].arn
 
   environment {
     variables = merge(
@@ -16,6 +17,7 @@ resource "aws_lambda_function" "default" {
       lookup(var.slack, "name", null) != null ? { "SLACK_NAME" = var.slack["name"] } : {},
       lookup(var.slack, "webhook", null) != null ? { "SLACK_WEBHOOK" = var.slack["webhook"] } : {},
       lookup(var.slack, "channel", null) != null ? { "SLACK_CHANNEL" = var.slack["channel"] } : {},
+      var.policy != null ? { "CCA_POLICY_FILE" = "/opt/policy.yaml" } : {},
       { for k, v in lookup(var.lambda, "environment_variables", {}) : k => v },
     )
   }
@@ -26,6 +28,10 @@ resource "aws_lambda_function" "default" {
       "Name" = var.name
     }
   )
+
+  # When logs.create manages the group, create it (with its retention) before
+  # the function can write and auto-create an unmanaged one.
+  depends_on = [aws_cloudwatch_log_group.default]
 }
 
 resource "aws_lambda_permission" "default" {

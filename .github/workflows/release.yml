@@ -1,0 +1,54 @@
+name: Release
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/go-tests.yml
+
+  release:
+    name: Build and publish release assets
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # git describe needs the tag history to stamp the version.
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: make release VERSION="${GITHUB_REF_NAME}"
+      - name: Publish assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # A tag with a pre-release suffix (v2.0.0-rc.1) is published as a
+          # pre-release so it never becomes the "latest" release.
+          prerelease=()
+          if [[ "$TAG" == *-* ]]; then
+            prerelease=(--prerelease)
+          fi
+          # Attach to a draft release for this tag, or create one. A release
+          # that is already published is never modified, so re-pushing a tag
+          # cannot replace assets people may have deployed.
+          if draft="$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            if [[ "$draft" != "true" ]]; then
+              echo "::error::release $TAG is already published; not replacing its assets"
+              exit 1
+            fi
+            gh release upload "$TAG" dist/function_*.zip dist/sha256sums.txt --clobber
+          else
+            gh release create "$TAG" dist/function_*.zip dist/sha256sums.txt \
+              --verify-tag --generate-notes --title "$TAG" "${prerelease[@]}"
+          fi

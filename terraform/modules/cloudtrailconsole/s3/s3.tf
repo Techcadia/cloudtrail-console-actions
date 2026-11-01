@@ -10,6 +10,9 @@ resource "aws_s3_bucket_notification" "default" {
     events = [
       "s3:ObjectCreated:*"
     ]
+    # CloudTrail log objects are gzipped JSON; the suffix filter keeps
+    # unrelated uploads from invoking (and failing) the Lambda.
+    filter_suffix = ".json.gz"
   }
 
   depends_on = [

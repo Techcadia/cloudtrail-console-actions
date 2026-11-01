@@ -29,8 +29,8 @@ variable "lambda" {
   description = "Lambda Settings"
   type        = any
   default = {
-    # **Note**: Raise this if you have failed s3 loads"
-    # memory                         = 128
+    # **Note**: Raise memory if you have slow/failed s3 loads"
+    # memory                         = 256
     # timeout                        = 15
     # reserved_concurrent_executions = 10
     # environment_variables          = {}
@@ -47,6 +47,17 @@ variable "logs" {
     kms_key_id        = optional(string)
   })
   default = {}
+}
+
+variable "policy" {
+  description = "FilterPolicy YAML replacing the embedded default policy, e.g. file(\"policy.yaml\"). Null keeps the default. Check it first with `bootstrap --config-file policy.yaml --validate-only`."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.policy == null || try(yamldecode(var.policy).kind == "FilterPolicy", false)
+    error_message = "policy must be a FilterPolicy YAML document (apiVersion: cca/v1, kind: FilterPolicy)."
+  }
 }
 
 variable "tags" {

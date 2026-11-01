@@ -42,3 +42,9 @@ mock_data "aws_iam_policy_document" {
     json = "{\"Version\":\"2012-10-17\"}"
   }
 }
+
+mock_resource "aws_lambda_layer_version" {
+  defaults = {
+    arn = "arn:aws:lambda:us-west-2:123456789012:layer:cloudTrailConsole-policy:1"
+  }
+}

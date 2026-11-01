@@ -1,0 +1,487 @@
+# yamllint disable-line rule:line-length
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Techcadia/cloudtrail-console-actions/main/policy.schema.json
+---
+# CloudTrail Console Actions: default filter policy
+# Faithful translation of the v0.4.0 `FilterRecords` ruleset, baked into
+# the binary. Override with --config-file or CCA_POLICY_FILE.
+# Rules are {key, operator, value} conditions grouped under any:/all: blocks.
+# Expressions in {{ }}; use `|| ''` for optional fields.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# EVALUATION SEMANTICS (per CloudTrail record)
+#
+#   1. preprocess  → compute working values, addressed as preprocess.* by filters.
+#   2. decide      → EMIT unless (some `skip` rule applies) AND (no `keep` rule applies)
+#                      skip rule applies = match ∧ ¬exclude
+#                      keep rule applies = match            (no exclude permitted)
+#                      keep > skip            (a keep that applies vetoes the drop)
+#                    `skip` rules combine as a UNION: any applicable skip drops.
+#   3. outputs     → project the emitted record to the log/Slack schema.
+#
+# Union semantics differ from v0's `switch` (first-match-wins, where a matched
+# case whose guard fails blocks later cases). For all realistic inputs the
+# EMIT/DROP decision is identical; the golden-test corpus is the gate that
+# proves it. The one intended difference is drop-cloudshell-lifecycle, which
+# is limited to CloudShell.
+#
+# OPERATORS
+#   Equals / NotEquals .............. exact, no wildcards
+#   AnyIn / AllIn / AnyNotIn / AllNotIn  set membership; values may use * and ?
+#                                        ("Foo*" = prefix, "*Foo" = suffix, "*Foo*" = contains)
+#   GreaterThan(OrEquals) / LessThan(OrEquals)  numeric
+#   Matches / NotMatches ............ RE2 regex (for cases wildcards can't express)
+# ─────────────────────────────────────────────────────────────────────────────
+
+apiVersion: cca/v1
+kind: FilterPolicy
+
+# ── Stage 1: preprocess (working values read by filters as preprocess.*) ───
+preprocess:
+
+  # v0: eventName is locally reassigned for billingconsole (TrimPrefix);
+  # the *record* field stays raw. Filters match on this normalized copy.
+  eventName:
+    - when:
+        all:
+          - { key: "{{ eventSource }}", operator: Equals, value: billingconsole.amazonaws.com }
+      value: "{{ trimPrefix(eventName, 'AWSPaymentPortalService.') }}"
+    - value: "{{ eventName }}"
+
+  # v0 derives userName in this precedence (highest first):
+  #   ssm OpenDataChannel sessionId  >  userIdentity.userName  >  principalId after ':'  >  principalId
+  userName:
+    - when:
+        all:
+          - { key: "{{ eventSource }}", operator: Equals, value: ssm.amazonaws.com }
+          - { key: "{{ eventName }}", operator: Equals, value: OpenDataChannel }
+          - { key: "{{ requestParameters.sessionId || '' }}", operator: NotEquals, value: "" }
+      value: "{{ requestParameters.sessionId }}"
+    - when:
+        all:
+          - { key: "{{ userIdentity.userName || '' }}", operator: NotEquals, value: "" }
+      value: "{{ userIdentity.userName }}"
+    - when:
+        all:
+          - { key: "{{ contains(userIdentity.principalId, ':') }}", operator: Equals, value: true }
+      value: "{{ split(userIdentity.principalId, ':')[1] }}"
+    - value: "{{ userIdentity.principalId }}"
+
+# ── Stage 2: keep (global veto, beats every skip) ────────────────────────────
+# Not present in v0, and OFF by default. A keep rule that applies forces EMIT
+# even if a skip rule matched. No `exclude` is permitted here, so the veto is
+# absolute and the policy stays provably terminating.
+#
+# The rule below alerts on writes that disable logging or detection whatever
+# tool made them, including the CLI and IaC that the user-agent gate normally
+# drops. It covers every account the trail does, so pipelines that manage
+# trails, Config or GuardDuty will alert on each change. To opt in, dump this
+# policy (--dump-default-policy), uncomment the block between the markers and
+# deploy it as a custom policy. Calls AWS makes on your behalf (invokedBy
+# "AWS Internal", e.g. Control Tower updating a service-managed trail) are not
+# vetoed.
+#
+# >>> opt-in keep
+# keep:
+#   - name: always-surface-security-writes
+#     match:
+#       all:
+#         - key: "{{ preprocess.eventName }}"
+#           operator: AnyIn
+#           value:
+#             # CloudTrail
+#             - DeleteTrail
+#             - StopLogging
+#             - UpdateTrail
+#             - PutEventSelectors
+#             - PutAdvancedEventSelectors
+#             - DeleteEventDataStore
+#             - StopEventDataStoreIngestion
+#             # GuardDuty
+#             - DeleteDetector
+#             - DisassociateFromAdministratorAccount
+#             - DisassociateFromMasterAccount
+#             # Security Hub
+#             - DisableSecurityHub
+#             # AWS Config
+#             - StopConfigurationRecorder
+#             - DeleteConfigurationRecorder
+#             - DeleteDeliveryChannel
+#             # VPC and IAM
+#             - DeleteFlowLogs
+#             - PutUserPolicy
+#         - { key: "{{ userIdentity.invokedBy || '' }}", operator: NotEquals, value: "AWS Internal" }
+# <<< opt-in keep
+
+# ── Stage 2: skip rules (default action is EMIT; these drop noise) ────────────
+filters:
+
+  # ---- global / early skips (top of FilterRecords) ----
+
+  - name: drop-aws-internal-invoked
+    action: skip
+    match:
+      all:
+        - { key: "{{ userIdentity.invokedBy || '' }}", operator: Equals, value: "AWS Internal" }
+
+  - name: drop-codecommit-all  # v0: codecommit short-circuits everything
+    action: skip
+    match:
+      all:
+        - { key: "{{ eventSource }}", operator: Equals, value: codecommit.amazonaws.com }
+
+  # v0.4.0: cognito events that cannot be attributed to a user, because the
+  # identity carries nothing but an accountId or is typed Unknown.
+  - name: drop-cognito-unattributable
+    action: skip
+    match:
+      all:
+        - { key: "{{ eventSource }}", operator: Equals, value: cognito-idp.amazonaws.com }
+      any:
+        - { key: "{{ keys(userIdentity) }}", operator: AllIn, value: [accountId] }
+        - { key: "{{ userIdentity.type }}", operator: Equals, value: Unknown }
+
+  - name: drop-billingconsole-noise  # matched against the trimmed name
+    action: skip
+    match:
+      all:
+        - { key: "{{ eventSource }}", operator: Equals, value: billingconsole.amazonaws.com }
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: [AssessSorChangeImpact, ConvertCurrencies] }
+
+  - name: drop-support-console-noise
+    action: skip
+    match:
+      all:
+        - { key: "{{ eventSource }}", operator: Equals, value: support-console.amazonaws.com }
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: ["Check*", CreateCaseDraft] }
+
+  - name: drop-payments-reads
+    action: skip
+    match:
+      all:
+        - { key: "{{ eventSource }}", operator: Equals, value: payments.amazonaws.com }
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: ["*_Get*", "*_BatchGet*", "*_List*"] }
+
+  - name: drop-q-error-chatter
+    action: skip
+    match:
+      all:
+        - { key: "{{ eventSource }}", operator: Equals, value: q.amazonaws.com }
+        - { key: "{{ errorCode || '' }}", operator: AnyIn, value: [AccessDenied, ThrottlingException] }
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: [StartConversation, SendMessage] }
+
+  # ---- read-only verb ladder (the big switch) ----
+
+  # v0 title-cases these (cases.NoLower) before HasPrefix, so the first
+  # letter is case-insensitive but the rest is not: "get*"/"Get*" match, "GET*" does not.
+  - name: drop-read-prefixes-title
+    action: skip
+    match:
+      all:
+        - key: "{{ preprocess.eventName }}"
+          operator: Matches
+          value: ['^[Gg]et', '^[Ll]ist', '^[Vv]iew']
+
+  - name: drop-read-prefixes
+    action: skip
+    match:
+      all:
+        - key: "{{ preprocess.eventName }}"
+          operator: AnyIn
+          value:
+            - "Head*"
+            - "Describe*"
+            - "Test*"
+            - "Download*"
+            - "Report*"
+            - "Refresh*"
+            - "Poll*"
+            - "Verify*"
+            - "Skip*"
+            - "Select*"
+            - "Count*"
+            - "Detect*"
+            - "Lookup*"
+            - "StartQuery*"
+            - "StopQuery*"
+            - "CancelQuery*"
+            - "BatchGet*"
+            - "Search*"
+
+  - name: drop-read-exact-names
+    action: skip
+    match:
+      all:
+        - key: "{{ preprocess.eventName }}"
+          operator: AnyIn
+          value:
+            - CheckMfa
+            - CheckDomainAvailability
+            - Decrypt
+            - SetTaskStatus
+            - BatchGetQueryExecution
+            - QueryObjects
+            - ValidatePolicy
+            - GenerateServiceLastAccessedDetails
+            - REST.GET.OBJECT_LOCK_CONFIGURATION
+            - AssumeRoleWithWebIdentity
+
+  # v0: ConsoleLogin is dropped unless the identity is Root.
+  - name: drop-consolelogin-nonroot
+    action: skip
+    match:
+      all:
+        - { key: "{{ preprocess.eventName }}", operator: Equals, value: ConsoleLogin }
+    exclude:
+      all:
+        - { key: "{{ userIdentity.type }}", operator: Equals, value: Root }
+
+  - name: drop-virtual-mfa-device  # HasSuffix(en, "VirtualMFADevice")
+    action: skip
+    match:
+      all:
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: ["*VirtualMFADevice"] }
+
+  # Limited to CloudShell. v0 matched these names from every service, which
+  # also dropped console actions such as Elastic Beanstalk CreateEnvironment
+  # and Glue CreateSession.
+  - name: drop-cloudshell-lifecycle
+    action: skip
+    match:
+      all:
+        - { key: "{{ eventSource }}", operator: Equals, value: cloudshell.amazonaws.com }
+        - key: "{{ preprocess.eventName }}"
+          operator: AnyIn
+          value:
+            - SendHeartBeat
+            - CreateEnvironment
+            - CreateSession
+            - DeleteEnvironment
+            - RedeemCode
+            - startEnvironment
+            - stopEnvironment
+            - PutCredentials
+
+  # ---- guarded skips ----
+
+  - name: drop-cognito-adminlist
+    action: skip
+    match:
+      all:
+        - { key: "{{ eventSource }}", operator: Equals, value: cognito-idp.amazonaws.com }
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: ["AdminList*"] }
+
+  - name: drop-cognito-get-suffix  # HasSuffix(ToLower(en), "get")
+    action: skip
+    match:
+      all:
+        - { key: "{{ eventSource }}", operator: Equals, value: cognito-idp.amazonaws.com }
+        - { key: "{{ preprocess.eventName }}", operator: Matches, value: ['(?i)get$'] }
+
+  - name: drop-anonymous-initiateauth  # v0 guards on principalId only, not source
+    action: skip
+    match:
+      all:
+        - { key: "{{ preprocess.eventName }}", operator: Equals, value: InitiateAuth }
+        - { key: "{{ userIdentity.principalId }}", operator: Equals, value: Anonymous }
+
+  - name: drop-eks-readonly-k8s-api
+    action: skip
+    match:
+      all:
+        - { key: "{{ preprocess.eventName }}", operator: Equals, value: AccessKubernetesApi }
+        - { key: "{{ readOnly }}", operator: Equals, value: true }
+
+  # v0.2.x dropped only elasticfilesystem; v0.3.x added s3files.
+  - name: drop-new-client-connection
+    action: skip
+    match:
+      all:
+        - { key: "{{ eventSource }}", operator: AnyIn, value: [elasticfilesystem.amazonaws.com, s3files.amazonaws.com] }
+        - { key: "{{ preprocess.eventName }}", operator: Equals, value: NewClientConnection }
+
+  - name: drop-quicksight-query-database
+    action: skip
+    match:
+      all:
+        - { key: "{{ eventSource }}", operator: Equals, value: quicksight.amazonaws.com }
+        - { key: "{{ preprocess.eventName }}", operator: Equals, value: QueryDatabase }
+
+  - name: drop-sso-auth
+    action: skip
+    match:
+      all:
+        - { key: "{{ eventSource }}", operator: Equals, value: sso.amazonaws.com }
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: [Federate, Authenticate, Logout] }
+
+  # v0.4.0: sign-in credential checks precede the UserAuthentication event.
+  - name: drop-signin-credential-checks
+    action: skip
+    match:
+      all:
+        - { key: "{{ eventSource }}", operator: Equals, value: signin.amazonaws.com }
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: [CredentialChallenge, CredentialVerification] }
+
+  - name: drop-signin-external-idp
+    action: skip
+    match:
+      all:
+        - { key: "{{ eventSource }}", operator: Equals, value: signin.amazonaws.com }
+        - { key: "{{ preprocess.eventName }}", operator: Equals, value: UserAuthentication }
+        - { key: "{{ additionalEventData.CredentialType }}", operator: Equals, value: EXTERNAL_IDP }
+
+  - name: drop-logs-noise
+    action: skip
+    match:
+      all:
+        - { key: "{{ eventSource }}", operator: Equals, value: logs.amazonaws.com }
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: [FilterLogEvents, PutQueryDefinition] }
+
+  - name: drop-ssm-session-suffix  # ssm:Start/Resume/TerminateSession
+    action: skip
+    match:
+      all:
+        - { key: "{{ eventSource }}", operator: Equals, value: ssm.amazonaws.com }
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: ["*Session"] }
+
+  # v0.3.x addition: ssm-guiconnect cancels are operator noise.
+  - name: drop-ssm-guiconnect-cancel
+    action: skip
+    match:
+      all:
+        - { key: "{{ eventSource }}", operator: Equals, value: ssm-guiconnect.amazonaws.com }
+        - { key: "{{ preprocess.eventName }}", operator: Equals, value: CancelConnection }
+
+  # v0.3.x addition: Inspector2 telemetry heartbeats.
+  - name: drop-inspector2-telemetry
+    action: skip
+    match:
+      all:
+        - { key: "{{ eventSource }}", operator: Equals, value: inspector2-telemetry.amazonaws.com }
+        - { key: "{{ preprocess.eventName }}", operator: Equals, value: SendTelemetryEvent }
+
+  - name: drop-s3-elb-access-logs  # PutObject for ELB logs landing from AWS-owned accounts
+    action: skip
+    match:
+      all:
+        - { key: "{{ preprocess.eventName }}", operator: Equals, value: PutObject }
+        - { key: "{{ userIdentity.type }}", operator: Equals, value: AWSAccount }
+        - { key: "{{ requestParameters.key }}", operator: Matches, value: ['AWSLogs/'] }
+        - { key: "{{ requestParameters.key }}", operator: Matches, value: ['/elasticloadbalancing/'] }
+
+  - name: drop-cloudwatch-rdsosmetrics
+    action: skip
+    match:
+      all:
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: ["CreateLog*"] }
+        - { key: "{{ requestParameters.logGroupName }}", operator: Equals, value: RDSOSMetrics }
+
+  - name: drop-ec2-lambda-vpc-eni
+    action: skip
+    match:
+      all:
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: ["CreateNetworkInterface*"] }
+        - { key: "{{ requestParameters.description }}", operator: Matches, value: ['^AWS Lambda VPC ENI-'] }
+
+  # v0 AssumeRole is A AND (B OR C OR D); B is itself (b1 AND b2). The flat
+  # grammar can't nest AND inside OR, so it splits into two skip rules whose
+  # union reproduces the OR exactly.
+  - name: drop-iam-assumerole-service-principal
+    action: skip
+    match:
+      all:
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: ["AssumeRole*"] }
+        - { key: "{{ userAgent }}", operator: Equals, value: "Coral/Netty4" }
+        - key: "{{ userIdentity.invokedBy || '' }}"
+          operator: AnyIn
+          value:
+            - ecs-tasks.amazonaws.com
+            - ec2.amazonaws.com
+            - monitoring.rds.amazonaws.com
+            - lambda.amazonaws.com
+
+  - name: drop-iam-assumerole-saml-or-account
+    action: skip
+    match:
+      all:
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: ["AssumeRole*"] }
+        - { key: "{{ userIdentity.type }}", operator: AnyIn, value: [SAMLUser, AWSAccount] }
+
+  - name: drop-batch-stepfunctions-submitjob  # fingerprint: 32-char all-letter userName
+    action: skip
+    match:
+      all:
+        - { key: "{{ preprocess.eventName }}", operator: Equals, value: SubmitJob }
+        - { key: "{{ preprocess.userName }}", operator: Matches, value: ['^[a-zA-Z]{32}$'] }
+
+  # ---- user-agent gate (the inverted switch: drop everything not console-like) ----
+
+  # vpc-flow-logs uses an aws-internal UA but must be DROPPED. It would be kept
+  # by the console allow-list below (it matches aws-internal), so a dedicated
+  # skip rule drops it first; union semantics means this wins.
+  - name: drop-aws-vpc-flow-logs
+    action: skip
+    match:
+      all:
+        - { key: "{{ userAgent || '' }}", operator: Matches, value: ['^aws-vpc-flow-logs'] }
+
+  # "block all UAs except recognized console agents." match = any UA present;
+  # exclude = the console allow-list (carve-out). A record with no userAgent
+  # never matches, so it is emitted, mirroring `if usa, ok := ...; ok`.
+  - name: drop-non-console-user-agent
+    action: skip
+    match:
+      all:
+        - { key: "{{ userAgent || '' }}", operator: NotEquals, value: "" }
+    exclude:
+      any:
+        - key: "{{ userAgent }}"
+          operator: AnyIn
+          value:
+            - console.amazonaws.com
+            - signin.amazonaws.com
+            - Coral/Jakarta
+            - Coral/Netty4
+            - AWS CloudWatch Console
+        - key: "{{ userAgent }}"
+          operator: AnyIn
+          value: ["AWS Signin*", "S3Console/*", "[S3Console*", "Mozilla/*", "[Mozilla/*"]
+        # v0's dots are unescaped regex wildcards ("console-v2.amazonaws.com"
+        # matches); kept verbatim for parity.
+        - key: "{{ userAgent }}"
+          operator: Matches
+          value: ['console.*.amazonaws.com', 'signin.*.amazonaws.com', '(?i)aws[\s-]internal']
+
+# ── Stage 3: emitted projection ──────────────────────────────────────────────
+# Every field lands on the "Event" log line. Alerts are grouped by
+# preprocess.eventName, preprocess.userName, account_id, event_source and
+# error_code, and timed and linked by event_time and event_id, so a policy
+# must define all of them. Slack also reads user_name and aws_region; its
+# headline event name is preprocess.eventName, not event_name, and
+# SLACK_NAME_<accountId> lookups key on account_id.
+outputs:
+  event_source: "{{ eventSource }}"
+  event_name: "{{ eventName }}"  # raw record field, NOT the trimmed preprocess.eventName
+  event_time: "{{ eventTime }}"
+  event_id: "{{ eventID }}"
+  aws_region: "{{ awsRegion }}"
+  principal: "{{ userIdentity.principalId }}"
+  user_agent: "{{ userAgent }}"
+  user_name: "{{ preprocess.userName }}"
+  error_code: "{{ errorCode || '' }}"
+
+  # The acting identity's own account (log line only).
+  identity_account_id: "{{ userIdentity.accountId || '' }}"
+
+  # v0: cognito-idp keeps userIdentity.accountId (the recipientAccountId
+  # branch there is a discarded fmt.Sprintf, a dead no-op). Everything else
+  # lets recipientAccountId override.
+  account_id:
+    - when:
+        all:
+          - { key: "{{ eventSource }}", operator: Equals, value: cognito-idp.amazonaws.com }
+      value: "{{ userIdentity.accountId || '' }}"
+    - when:
+        all:
+          - { key: "{{ recipientAccountId || '' }}", operator: NotEquals, value: "" }
+      value: "{{ recipientAccountId }}"
+    - value: "{{ userIdentity.accountId || '' }}"

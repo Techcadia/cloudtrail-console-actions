@@ -1,6 +1,6 @@
 resource "aws_cloudwatch_log_group" "default" {
   count             = var.logs["create"] ? 1 : 0
-  name              = coalesce(var.logs["name"], "/aws/lambda/${var.name}")
+  name              = local.log_group_name
   retention_in_days = var.logs["retention_in_days"]
   skip_destroy      = var.logs["skip_destroy"]
   log_group_class   = var.logs["log_group_class"]
@@ -9,7 +9,7 @@ resource "aws_cloudwatch_log_group" "default" {
   tags = merge(
     var.tags,
     {
-      Name = coalesce(var.logs["name"], "/aws/lambda/${var.name}")
+      Name = local.log_group_name
     }
   )
 }

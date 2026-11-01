@@ -24,12 +24,15 @@ resource "aws_iam_role" "default" {
 }
 
 data "aws_iam_policy_document" "default" {
+  # Lambda creates its own log group on first write unless logs.create manages
+  # it in Terraform; the role needs CreateLogGroup either way so a deleted
+  # group can be recreated.
   statement {
     actions = [
       "logs:CreateLogGroup",
     ]
     resources = [
-      "arn:aws:logs:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:/aws/lambda/${var.name}",
+      local.log_group_arn,
     ]
   }
 
@@ -39,7 +42,7 @@ data "aws_iam_policy_document" "default" {
       "logs:PutLogEvents",
     ]
     resources = [
-      "arn:aws:logs:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${var.name}:log-stream:*",
+      "${local.log_group_arn}:log-stream:*",
     ]
   }
 
@@ -60,7 +63,6 @@ data "aws_iam_policy_document" "default" {
       "${data.aws_s3_bucket.default.arn}/*"
     ]
   }
-
 }
 
 resource "aws_iam_role_policy" "default" {

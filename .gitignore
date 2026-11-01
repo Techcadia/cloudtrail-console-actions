@@ -5,3 +5,6 @@ bin/*
 .terraform.lock.hcl
 
 **/.DS_Store
+
+# stray local builds
+/cloudtrail-console-actions
