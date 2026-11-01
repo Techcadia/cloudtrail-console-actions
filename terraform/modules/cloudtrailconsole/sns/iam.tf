@@ -24,16 +24,34 @@ resource "aws_iam_role" "default" {
 }
 
 data "aws_iam_policy_document" "default" {
-  # The log group itself is created by aws_cloudwatch_log_group.default (with a
-  # managed retention), so the role only needs to write streams — not create
-  # the group.
+  # Lambda creates its own log group on first write unless logs.create manages
+  # it in Terraform; the role needs CreateLogGroup either way so a deleted
+  # group can be recreated.
+  statement {
+    actions = [
+      "logs:CreateLogGroup",
+    ]
+    resources = [
+      local.log_group_arn,
+    ]
+  }
+
   statement {
     actions = [
       "logs:CreateLogStream",
       "logs:PutLogEvents",
     ]
     resources = [
-      "${aws_cloudwatch_log_group.default.arn}:*",
+      "${local.log_group_arn}:log-stream:*",
+    ]
+  }
+
+  statement {
+    actions = [
+      "s3:ListBucket"
+    ]
+    resources = [
+      data.aws_s3_bucket.default.arn
     ]
   }
 
@@ -45,7 +63,6 @@ data "aws_iam_policy_document" "default" {
       "${data.aws_s3_bucket.default.arn}/*"
     ]
   }
-
 }
 
 resource "aws_iam_role_policy" "default" {

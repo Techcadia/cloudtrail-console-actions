@@ -43,12 +43,23 @@ variable "lambda" {
     # memory                         = 256
     # timeout                        = 15
     # reserved_concurrent_executions = 10
-    # log_retention_in_days          = 90
     # environment_variables          = {}
     # permissions                    = {}
   }
 }
 
+variable "logs" {
+  description = "Log group settings"
+  type = object({
+    create            = optional(bool, false)
+    name              = optional(string)
+    retention_in_days = optional(number, 30)
+    skip_destroy      = optional(bool, false)
+    log_group_class   = optional(string, "STANDARD")
+    kms_key_id        = optional(string)
+  })
+  default = {}
+}
 
 variable "tags" {
   description = "A mapping of tags to supply to the resources"

@@ -1,5 +1,5 @@
 # CloudTrail Console Actions — default filter policy
-# Faithful translation of the v1 `FilterRecords` ruleset (v0.3.2), baked into
+# Faithful translation of the v1 `FilterRecords` ruleset (v0.4.0), baked into
 # the binary. Override with --config-file or CCA_POLICY_FILE.
 # Rules are {key, operator, value} conditions grouped under any:/all: blocks.
 # Expressions in {{ }}; use `|| ''` for optional fields.
@@ -90,6 +90,17 @@ filters:
     match:
       all:
         - { key: "{{ eventSource }}", operator: Equals, value: codecommit.amazonaws.com }
+
+  # v0.4.0: cognito events that cannot be attributed to a user — the identity
+  # carries nothing but an accountId, or is typed Unknown.
+  - name: drop-cognito-unattributable
+    action: skip
+    match:
+      all:
+        - { key: "{{ eventSource }}", operator: Equals, value: cognito-idp.amazonaws.com }
+      any:
+        - { key: "{{ keys(userIdentity) }}", operator: AllIn,  value: [accountId] }
+        - { key: "{{ userIdentity.type }}",  operator: Equals, value: Unknown }
 
   - name: drop-billingconsole-noise    # matched against the trimmed name
     action: skip
@@ -262,6 +273,14 @@ filters:
         - { key: "{{ eventSource }}",    operator: Equals, value: sso.amazonaws.com }
         - { key: "{{ preprocess.eventName }}", operator: AnyIn,  value: [Federate, Authenticate, Logout] }
 
+  # v0.4.0: sign-in credential checks precede the UserAuthentication event.
+  - name: drop-signin-credential-checks
+    action: skip
+    match:
+      all:
+        - { key: "{{ eventSource }}",          operator: Equals, value: signin.amazonaws.com }
+        - { key: "{{ preprocess.eventName }}", operator: AnyIn,  value: [CredentialChallenge, CredentialVerification] }
+
   - name: drop-signin-external-idp
     action: skip
     match:
@@ -381,9 +400,11 @@ filters:
         - key: "{{ userAgent }}"
           operator: AnyIn
           value: ["AWS Signin*", "S3Console/*", "[S3Console*", "Mozilla/*", "[Mozilla/*"]
+        # v1's dots are unescaped regex wildcards ("console-v2.amazonaws.com"
+        # matches); kept verbatim for parity.
         - key: "{{ userAgent }}"
           operator: Matches
-          value: ['console\..*\.amazonaws\.com', 'signin\..*\.amazonaws\.com', '(?i)aws[\s-]internal']
+          value: ['console.*.amazonaws.com', 'signin.*.amazonaws.com', '(?i)aws[\s-]internal']
 
 # ── Stage 3: emitted projection ──────────────────────────────────────────────
 # Every field lands on the "Event" log line. The Slack notifier reads the
@@ -401,7 +422,7 @@ outputs:
   user_name:    "{{ preprocess.userName }}"
   error_code:   "{{ errorCode || '' }}"
 
-  # SLACK_NAME_<accountId> lookups key on the identity's own account.
+  # The acting identity's own account (log line only).
   identity_account_id: "{{ userIdentity.accountId || '' }}"
 
   # v1: cognito-idp keeps userIdentity.accountId (the recipientAccountId

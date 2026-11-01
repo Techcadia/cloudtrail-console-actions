@@ -1,0 +1,81 @@
+name: Terraform Tests
+on:
+  pull_request:
+    branches:
+      - main
+
+env:
+  TF_IN_AUTOMATION: true
+  # terraform test uses mock_provider for every run in these modules, so no
+  # real AWS calls are made. Dummy credentials just satisfy the provider
+  # block's presence check and keep real credentials out of scope.
+  AWS_ACCESS_KEY_ID: test
+  AWS_SECRET_ACCESS_KEY: test
+  AWS_SESSION_TOKEN: ""
+  AWS_DEFAULT_REGION: us-west-2
+  AWS_EC2_METADATA_DISABLED: true
+
+jobs:
+  changes:
+    name: Terraform Tests Determine changesets
+    outputs:
+      terraform: ${{ steps.diff.outputs.terraform }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Calculate changesets
+        uses: dorny/paths-filter@v3
+        id: diff
+        with:
+          filters: |
+            terraform:
+              - added|modified: 'terraform/modules/cloudtrailconsole/**'
+
+  terraform-test:
+    name: Terraform Tests ${{ matrix.module }}
+    needs: changes
+    if: ${{ needs.changes.outputs.terraform == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - s3
+          - sns
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
+      - name: terraform init and test
+        working-directory: terraform/modules/cloudtrailconsole/${{ matrix.module }}
+        run: |
+          terraform init -backend=false -input=false
+          terraform test -no-color
+  status:
+    # Using an aggregated status job allows this to be a required check on the PR.
+    # Required check: pass if no relevant files changed or the test matrix succeeded.
+    runs-on: ubuntu-latest
+    name: Terraform Tests status
+    timeout-minutes: 10
+    if: always()
+    needs:
+      - changes
+      - terraform-test
+    steps:
+      - env:
+          CHANGES: ${{ needs.changes.outputs.terraform }}
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          TEST_RESULT: ${{ needs.terraform-test.result }}
+        run: |
+          if [[ "$CHANGES_RESULT" == success &&
+                ( "$CHANGES" == false || "$TEST_RESULT" == success ) ]]; then
+            echo "Terraform tests passed or no relevant files changed"
+            exit 0
+          fi
+          echo "::error::Terraform tests or change detection failed"
+          exit 1

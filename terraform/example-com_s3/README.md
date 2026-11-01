@@ -17,10 +17,18 @@ module "default" {
     memory                         = 256
     timeout                        = 15
     reserved_concurrent_executions = 10
-    log_retention_in_days          = 90
     environment_variables          = {}
     # **Note**: Depending on your Terraform directory structure you might need to define the filepath.
     filepath = "../../../cloudtrail-console-actions/dist/function_arm64.zip"
+  }
+
+  # Manage the Lambda log group (and its retention) in Terraform. Leave this
+  # out for an existing deployment whose /aws/lambda/<name> group was already
+  # auto-created, or import that group first:
+  #   terraform import 'module.default.aws_cloudwatch_log_group.default[0]' /aws/lambda/cloudTrailConsole
+  logs = {
+    create            = true
+    retention_in_days = 90
   }
 
   # slack does not need to be defined for cloudwatch logs to be emitted
@@ -71,6 +79,7 @@ No modules.
 | [aws_caller_identity.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/caller_identity) | data source |
 | [aws_iam_policy_document.default](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
 | [aws_iam_policy_document.sts](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
+| [aws_region.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/region) | data source |
 | [aws_s3_bucket.default](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/s3_bucket) | data source |
 
 ## Inputs
@@ -78,6 +87,7 @@ No modules.
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | <a name="input_lambda"></a> [lambda](#input\_lambda) | Lambda Settings | `any` | `{}` | no |
+| <a name="input_logs"></a> [logs](#input\_logs) | Log group settings | <pre>object({<br/>    create            = optional(bool, false)<br/>    retention_in_days = optional(number, 30)<br/>    skip_destroy      = optional(bool, false)<br/>    log_group_class   = optional(string, "STANDARD")<br/>    kms_key_id        = optional(string)<br/>  })</pre> | `{}` | no |
 | <a name="input_name"></a> [name](#input\_name) | Name of the Lambda, IAM Role and CloudWatch Log Groups | `string` | `"cloudTrailConsole"` | no |
 | <a name="input_s3"></a> [s3](#input\_s3) | S3 Bucket Settings | `any` | `{}` | no |
 | <a name="input_slack"></a> [slack](#input\_slack) | Slack Settings | `any` | `{}` | no |

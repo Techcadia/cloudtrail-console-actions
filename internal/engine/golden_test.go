@@ -104,6 +104,7 @@ var pairs = []pair{
 	{"cognito-idp.amazonaws.com", "TokenGet"},
 	{"cognito-idp.amazonaws.com", "InitiateAuth"},
 	{"cognito-idp.amazonaws.com", "RespondToAuthChallenge"},
+	{"cognito-idp.amazonaws.com", "SignUp"},
 	{"eks.amazonaws.com", "AccessKubernetesApi"},
 	{"logs.amazonaws.com", "CreateLogGroup"},
 	{"logs.amazonaws.com", "CreateLogStream"},
@@ -118,6 +119,9 @@ var pairs = []pair{
 	{"sso.amazonaws.com", "Logout"},
 	{"iam.amazonaws.com", "Federate"},
 	{"signin.amazonaws.com", "UserAuthentication"},
+	{"signin.amazonaws.com", "CredentialChallenge"},
+	{"signin.amazonaws.com", "CredentialVerification"},
+	{"iam.amazonaws.com", "CredentialChallenge"},
 	{"cloudshell.amazonaws.com", "SendHeartBeat"},
 	{"cloudshell.amazonaws.com", "CreateEnvironment"},
 	{"cloudshell.amazonaws.com", "CreateSession"},
@@ -169,6 +173,13 @@ var userAgents = []string{
 	"aws-vpc-flow-logs.amazonaws.com",
 	"aws-cli/2.13.0 Python/3.11.4",
 	"APN/1.0 HashiCorp/1.0 Terraform/1.5.7",
+	// edge cases for v1's unescaped "console.*.amazonaws.com"-style regexes
+	"console-v2.amazonaws.com",
+	"signin-proxy.amazonaws.com",
+	"aws-sdk-js/3 consoleXamazonawsYcom",
+	"[S3Console/0.4]",
+	"AWS-Internal/3 aws-vpc-flow-logs",
+	"aws-vpc-flow-logs aws-internal/3",
 }
 
 // identities: userIdentity variants v1 branches on.
@@ -183,6 +194,9 @@ var identities = []map[string]any{
 	{"type": "AssumedRole", "principalId": "AROAECS:svc", "invokedBy": "ecs-tasks.amazonaws.com", "accountId": "111111111111"},
 	// 32 alphabetic chars after the colon: the Step Functions SubmitJob fingerprint
 	{"type": "AssumedRole", "principalId": "AROASFN:abcdefghijklmnopqrstuvwxyzabcdef", "accountId": "111111111111"},
+	// cognito-idp identities v1 cannot attribute to a user (v0.4.0)
+	{"accountId": "111111111111"},
+	{"type": "Unknown", "principalId": "Anonymous"},
 }
 
 // extras merge extra top-level fields into the record.
@@ -235,6 +249,10 @@ func assertParity(t *testing.T, eng *engine.Engine, rec map[string]any) {
 	t.Helper()
 	v1Emit, v1User := v1Decision(rec)
 	d := eng.Evaluate(rec)
+	// v1 formats an absent principalId as fmt's "%!s(<nil>)"; v2 leaves it nil.
+	if v1User == "%!s(<nil>)" {
+		v1User = "<nil>"
+	}
 
 	// The keep block is the one agreed divergence: keep-listed writes must
 	// always emit, even when v1 dropped them.

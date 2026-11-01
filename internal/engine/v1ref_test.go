@@ -8,7 +8,7 @@ import (
 )
 
 // v1Decision is a test-only, line-faithful port of v1 FilterRecords
-// (main.go v0.3.2). It is the oracle for the golden parity tests: it returns
+// (main.go v0.4.0). It is the oracle for the golden parity tests: it returns
 // whether v1 would emit the record, and the userName v1 would report.
 //
 // v1's Title() uses x/text cases.Title with NoLower; for single-token event
@@ -42,6 +42,13 @@ func v1Decision(record map[string]any) (emit bool, userName string) {
 
 	if record["eventSource"] == "codecommit.amazonaws.com" {
 		return false, ""
+	}
+
+	if record["eventSource"] == "cognito-idp.amazonaws.com" {
+		if _, ok := userIdentity["accountId"]; (len(userIdentity) == 1 && ok) ||
+			userIdentity["type"] == "Unknown" {
+			return false, ""
+		}
 	}
 
 	if record["eventSource"] == "billingconsole.amazonaws.com" {
@@ -209,6 +216,14 @@ func v1Decision(record map[string]any) (emit bool, userName string) {
 			return false, ""
 		}
 
+	case en == "CredentialChallenge":
+		if record["eventSource"] == "signin.amazonaws.com" {
+			return false, ""
+		}
+	case en == "CredentialVerification":
+		if record["eventSource"] == "signin.amazonaws.com" {
+			return false, ""
+		}
 	case en == "UserAuthentication":
 		if record["eventSource"] == "signin.amazonaws.com" {
 			if aed, ok := record["additionalEventData"].(map[string]any); ok {

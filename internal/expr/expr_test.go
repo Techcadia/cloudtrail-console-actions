@@ -1,6 +1,7 @@
 package expr
 
 import (
+	"reflect"
 	"testing"
 )
 
@@ -127,6 +128,21 @@ func TestCompileAndEval(t *testing.T) {
 			want:     nil,
 		},
 		{
+			name:     "keys of an object are sorted",
+			template: "{{ keys(userIdentity) }}",
+			want:     []string{"invokedBy", "principalId", "userName"},
+		},
+		{
+			name:     "keys of a non-object is nil",
+			template: "{{ keys(eventSource) }}",
+			want:     nil,
+		},
+		{
+			name:     "keys of missing value is nil",
+			template: "{{ keys(userIdentity.sessionContext) }}",
+			want:     nil,
+		},
+		{
 			name:     "quoted literal expression",
 			template: "{{ 'hello' }}",
 			want:     "hello",
@@ -145,7 +161,7 @@ func TestCompileAndEval(t *testing.T) {
 				t.Fatalf("Compile(%q) error: %v", tt.template, err)
 			}
 			got := e.Eval(record())
-			if got != tt.want {
+			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Eval(%q) = %#v, want %#v", tt.template, got, tt.want)
 			}
 		})
@@ -179,6 +195,7 @@ func TestCompileErrors(t *testing.T) {
 		{"overflowing index", "{{ split(eventName, ':')[99999999999999999999] }}"},
 		{"trailing garbage", "{{ eventSource eventName }}"},
 		{"wrong arity", "{{ contains(eventName) }}"},
+		{"wrong arity for keys", "{{ keys(userIdentity, eventName) }}"},
 	}
 
 	for _, tt := range tests {

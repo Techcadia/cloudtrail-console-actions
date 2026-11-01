@@ -1,8 +1,8 @@
 dist/*
 bin/*
 
-*/.terraform
-*/.terraform.lock.hcl
+.terraform
+.terraform.lock.hcl
 
 **/.DS_Store
 

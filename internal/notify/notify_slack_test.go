@@ -87,7 +87,7 @@ func TestSlackGroupedEvent(t *testing.T) {
 	}
 }
 
-func TestSlackNameLookupUsesIdentityAccountOutput(t *testing.T) {
+func TestSlackNameLookupUsesAccountOutput(t *testing.T) {
 	srv, bodies := slackServer(t, "ok")
 	env := map[string]string{
 		"SLACK_NAME_999999999999": ":lock: security",
@@ -98,13 +98,15 @@ func TestSlackNameLookupUsesIdentityAccountOutput(t *testing.T) {
 		HTTPClient: srv.Client(),
 		LookupEnv:  func(k string) (string, bool) { v, ok := env[k]; return v, ok },
 	}
+	// v0.4.0 keys the lookup on the recipient account, not the identity's.
 	g := group(1)
-	g.Outputs["identity_account_id"] = "999999999999"
+	g.Outputs["account_id"] = "999999999999"
+	g.Outputs["identity_account_id"] = "111111111111"
 	if err := s.Send(g); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 	if !strings.Contains(string((*bodies)[0]), ":lock: security") {
-		t.Errorf("SLACK_NAME_<identity_account_id> not applied:\n%s", (*bodies)[0])
+		t.Errorf("SLACK_NAME_<account_id> not applied:\n%s", (*bodies)[0])
 	}
 }
 

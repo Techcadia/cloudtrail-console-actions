@@ -27,8 +27,8 @@ resource "aws_lambda_function" "default" {
     }
   )
 
-  # Ensure the managed log group exists before the function can be invoked;
-  # the role no longer has logs:CreateLogGroup to auto-create it.
+  # When logs.create manages the group, create it (with its retention) before
+  # the function can write and auto-create an unmanaged one.
   depends_on = [aws_cloudwatch_log_group.default]
 }
 

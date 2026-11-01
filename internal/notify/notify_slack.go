@@ -109,10 +109,11 @@ func (s *Slack) Send(g *collector.Group) error {
 	return s.post(body)
 }
 
-// displayName resolves the account label: SLACK_NAME_<identity_account_id>
-// beats SLACK_NAME beats the account_id output.
+// displayName resolves the account label: SLACK_NAME_<account_id> beats
+// SLACK_NAME beats the account_id output itself. Keying on account_id (the
+// recipient account) matches v1 v0.4.0.
 func (s *Slack) displayName(g *collector.Group) string {
-	if v, ok := s.LookupEnv("SLACK_NAME_" + outputStr(g, "identity_account_id", "")); ok && v != "" {
+	if v, ok := s.LookupEnv("SLACK_NAME_" + outputStr(g, "account_id", "")); ok && v != "" {
 		return v
 	}
 	if v, ok := s.LookupEnv("SLACK_NAME"); ok && v != "" {

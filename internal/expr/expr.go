@@ -5,7 +5,8 @@
 //	chain   := head ("." ident | "[" int "]")*
 //	head    := 'string' | true | false | null | func "(" expr ("," expr)* ")" | ident
 //
-// Supported functions: trimPrefix(s, prefix), contains(s, substr), split(s, sep).
+// Supported functions: trimPrefix(s, prefix), contains(s, substr), split(s, sep),
+// keys(object) — the object's field names, sorted.
 //
 // Evaluation is total: missing fields, type mismatches and out-of-range
 // indexes yield nil rather than errors, and "a || b" returns b when a is
@@ -15,6 +16,8 @@ package expr
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -165,7 +168,16 @@ type callNode struct {
 }
 
 func (n *callNode) eval(scope map[string]any) any {
-	// Arity is checked at compile time; every function takes (string, string).
+	// Arity is checked at compile time.
+	if n.fn == "keys" {
+		m, ok := n.args[0].eval(scope).(map[string]any)
+		if !ok {
+			return nil
+		}
+		return slices.Sorted(maps.Keys(m))
+	}
+
+	// The remaining functions all take (string, string).
 	s, ok := n.args[0].eval(scope).(string)
 	if !ok {
 		return nil
@@ -190,6 +202,7 @@ var funcs = map[string]int{
 	"trimPrefix": 2,
 	"contains":   2,
 	"split":      2,
+	"keys":       1,
 }
 
 // ---- parser ----

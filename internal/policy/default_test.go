@@ -23,7 +23,7 @@ func TestDefaultParses(t *testing.T) {
 		names = append(names, f.Name)
 	}
 
-	// Every v1 (v0.3.2) behavior must have a corresponding rule, including
+	// Every v1 (v0.4.0) behavior must have a corresponding rule, including
 	// the ones added after the v0.2.3 policy draft.
 	for _, want := range []string{
 		"drop-aws-internal-invoked",
@@ -32,6 +32,8 @@ func TestDefaultParses(t *testing.T) {
 		"drop-new-client-connection",
 		"drop-ssm-guiconnect-cancel",
 		"drop-inspector2-telemetry",
+		"drop-cognito-unattributable",
+		"drop-signin-credential-checks",
 		"drop-non-console-user-agent",
 	} {
 		if !slices.Contains(names, want) {
