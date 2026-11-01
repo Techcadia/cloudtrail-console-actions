@@ -95,6 +95,38 @@ func (e *Expr) String() string { return e.src }
 // IsLiteral reports whether the template contains no expression at all.
 func (e *Expr) IsLiteral() bool { return e.node == nil }
 
+// Refs returns the field names the expression reads directly under the
+// root identifier, e.g. Refs("preprocess") on "{{ preprocess.userName }}"
+// is ["userName"].
+func (e *Expr) Refs(root string) []string {
+	var out []string
+	var walk func(node)
+	walk = func(n node) {
+		switch t := n.(type) {
+		case *orNode:
+			for _, op := range t.operands {
+				walk(op)
+			}
+		case *callNode:
+			for _, arg := range t.args {
+				walk(arg)
+			}
+		case *indexNode:
+			walk(t.base)
+		case *fieldNode:
+			if id, ok := t.base.(*identNode); ok && id.name == root {
+				out = append(out, t.name)
+			} else {
+				walk(t.base)
+			}
+		}
+	}
+	if e.node != nil {
+		walk(e.node)
+	}
+	return out
+}
+
 // falsy mirrors JMESPath truthiness: nil, false, empty string/array/map.
 func falsy(v any) bool {
 	switch t := v.(type) {

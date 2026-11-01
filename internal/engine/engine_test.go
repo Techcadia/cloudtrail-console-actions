@@ -321,6 +321,56 @@ outputs:
 `,
 			wantErr: "broken",
 		},
+		{
+			// Without {{ }} the key is the constant "userAgent", so this rule
+			// would drop every record.
+			name: "constant condition key",
+			src: `
+apiVersion: cca/v1
+kind: FilterPolicy
+filters:
+  - name: f
+    action: skip
+    match:
+      all:
+        - { key: "userAgent", operator: NotEquals, value: "" }
+`,
+			wantErr: "is a constant",
+		},
+		{
+			name: "undeclared preprocess field",
+			src: `
+apiVersion: cca/v1
+kind: FilterPolicy
+preprocess:
+  eventName: "{{ eventName }}"
+filters:
+  - name: f
+    action: skip
+    match:
+      all:
+        - { key: "{{ preprocess.eventname }}", operator: Equals, value: x }
+`,
+			wantErr: "preprocess.eventname",
+		},
+		{
+			// Preprocess fields evaluate in order, so a later field reads nil.
+			name: "preprocess forward reference",
+			src: `
+apiVersion: cca/v1
+kind: FilterPolicy
+preprocess:
+  label: "{{ preprocess.userName || 'none' }}"
+  userName: "{{ userIdentity.userName }}"
+filters:
+  - name: f
+    action: skip
+    match:
+      all:
+        - { key: "{{ eventName }}", operator: Equals, value: x }
+`,
+			wantErr: "preprocess.userName",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -359,5 +409,12 @@ filters:
 	}
 	if d.Preprocess["label"] != "true" {
 		t.Errorf(`quoted "true" must stay a string, got %#v`, d.Preprocess["label"])
+	}
+}
+
+func TestEvaluateNilRecord(t *testing.T) {
+	e := compileYAML(t, testPolicy)
+	if d := e.Evaluate(nil); d.Preprocess == nil {
+		t.Errorf("Evaluate(nil) = %+v, want a decision", d)
 	}
 }

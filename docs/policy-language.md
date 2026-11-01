@@ -56,6 +56,11 @@ when a later condition compares against a boolean.
   leading zero: write account IDs as `"012345670123"`.
 - The loader is strict: unknown keys (including inside `when:` blocks and
   conditions) and duplicate field names are errors.
+- A condition `key:` must be an expression. `key: "userAgent"` without
+  `{{ }}` would compare the constant string `"userAgent"`, so it is rejected.
+- `preprocess.<name>` must name a declared preprocess field, and inside
+  `preprocess:` one declared earlier, since fields evaluate in order. A
+  misspelled name would otherwise read as `null`.
 
 ## Evaluation is total (never errors)
 

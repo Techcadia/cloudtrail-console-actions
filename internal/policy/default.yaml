@@ -19,7 +19,8 @@
 # Union semantics differ from v0's `switch` (first-match-wins, where a matched
 # case whose guard fails blocks later cases). For all realistic inputs the
 # EMIT/DROP decision is identical; the golden-test corpus is the gate that
-# proves it.
+# proves it. The one intended difference is drop-cloudshell-lifecycle, which
+# is limited to CloudShell.
 #
 # OPERATORS
 #   Equals / NotEquals .............. exact, no wildcards
@@ -64,33 +65,50 @@ preprocess:
     - value: "{{ userIdentity.principalId }}"
 
 # ── Stage 2: keep (global veto, beats every skip) ────────────────────────────
-# Not present in v0. A keep rule that applies forces EMIT even if a skip rule
-# matched. No `exclude` is permitted here, so the veto is absolute and the
-# policy stays provably terminating.
+# Not present in v0, and OFF by default. A keep rule that applies forces EMIT
+# even if a skip rule matched. No `exclude` is permitted here, so the veto is
+# absolute and the policy stays provably terminating.
 #
-# Scoped to writes that disable logging or detection (rarely legitimate from
-# automation) plus PutUserPolicy; IaC-routine writes such as PutBucketPolicy
-# are left out so every `terraform apply` does not alert. Calls AWS makes on
-# your behalf (invokedBy "AWS Internal", e.g. Control Tower updating a
-# service-managed trail) are not vetoed.
-keep:
-  - name: always-surface-security-writes
-    match:
-      all:
-        - key: "{{ preprocess.eventName }}"
-          operator: AnyIn
-          value:
-            - DeleteTrail
-            - StopLogging
-            - UpdateTrail
-            - PutUserPolicy
-            - DeleteFlowLogs
-            - DeleteDetector  # GuardDuty
-            - DisableSecurityHub
-            - StopConfigurationRecorder
-            - DeleteConfigurationRecorder
-            - DeleteDeliveryChannel  # AWS Config
-        - { key: "{{ userIdentity.invokedBy || '' }}", operator: NotEquals, value: "AWS Internal" }
+# The rule below alerts on writes that disable logging or detection whatever
+# tool made them, including the CLI and IaC that the user-agent gate normally
+# drops. It covers every account the trail does, so pipelines that manage
+# trails, Config or GuardDuty will alert on each change. To opt in, dump this
+# policy (--dump-default-policy), uncomment the block between the markers and
+# deploy it as a custom policy. Calls AWS makes on your behalf (invokedBy
+# "AWS Internal", e.g. Control Tower updating a service-managed trail) are not
+# vetoed.
+#
+# >>> opt-in keep
+# keep:
+#   - name: always-surface-security-writes
+#     match:
+#       all:
+#         - key: "{{ preprocess.eventName }}"
+#           operator: AnyIn
+#           value:
+#             # CloudTrail
+#             - DeleteTrail
+#             - StopLogging
+#             - UpdateTrail
+#             - PutEventSelectors
+#             - PutAdvancedEventSelectors
+#             - DeleteEventDataStore
+#             - StopEventDataStoreIngestion
+#             # GuardDuty
+#             - DeleteDetector
+#             - DisassociateFromAdministratorAccount
+#             - DisassociateFromMasterAccount
+#             # Security Hub
+#             - DisableSecurityHub
+#             # AWS Config
+#             - StopConfigurationRecorder
+#             - DeleteConfigurationRecorder
+#             - DeleteDeliveryChannel
+#             # VPC and IAM
+#             - DeleteFlowLogs
+#             - PutUserPolicy
+#         - { key: "{{ userIdentity.invokedBy || '' }}", operator: NotEquals, value: "AWS Internal" }
+# <<< opt-in keep
 
 # ── Stage 2: skip rules (default action is EMIT; these drop noise) ────────────
 filters:
@@ -221,12 +239,14 @@ filters:
       all:
         - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: ["*VirtualMFADevice"] }
 
-  # v0 does NOT guard these cloudshell lifecycle events by eventSource;
-  # they are dropped regardless of source. Kept faithful; revisit if undesired.
+  # Limited to CloudShell. v0 matched these names from every service, which
+  # also dropped console actions such as Elastic Beanstalk CreateEnvironment
+  # and Glue CreateSession.
   - name: drop-cloudshell-lifecycle
     action: skip
     match:
       all:
+        - { key: "{{ eventSource }}", operator: Equals, value: cloudshell.amazonaws.com }
         - key: "{{ preprocess.eventName }}"
           operator: AnyIn
           value:

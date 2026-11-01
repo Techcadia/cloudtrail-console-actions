@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/engine"
@@ -18,22 +19,20 @@ import (
 // about, crossed with user agents, identities, request parameters and error
 // codes.
 //
-// The single intended divergence is the keep: block. Security-critical writes
-// are emitted even when v0 would have dropped them, and this is asserted
-// explicitly.
+// The single intended divergence is drop-cloudshell-lifecycle, which v0
+// applied to every service and the default policy limits to CloudShell; it
+// is asserted explicitly.
 
-// keepListed are the preprocess.eventName values the default keep rule vetoes.
-var keepListed = map[string]bool{
-	"DeleteTrail":                 true,
-	"StopLogging":                 true,
-	"PutUserPolicy":               true,
-	"DeleteFlowLogs":              true,
-	"UpdateTrail":                 true,
-	"DeleteDetector":              true,
-	"DisableSecurityHub":          true,
-	"StopConfigurationRecorder":   true,
-	"DeleteConfigurationRecorder": true,
-	"DeleteDeliveryChannel":       true,
+// cloudshellLifecycle are the event names drop-cloudshell-lifecycle matches.
+var cloudshellLifecycle = map[string]bool{
+	"SendHeartBeat":     true,
+	"CreateEnvironment": true,
+	"CreateSession":     true,
+	"DeleteEnvironment": true,
+	"RedeemCode":        true,
+	"startEnvironment":  true,
+	"stopEnvironment":   true,
+	"PutCredentials":    true,
 }
 
 type pair struct{ source, name string }
@@ -136,6 +135,10 @@ var pairs = []pair{
 	{"cloudshell.amazonaws.com", "startEnvironment"},
 	{"cloudshell.amazonaws.com", "stopEnvironment"},
 	{"cloudshell.amazonaws.com", "PutCredentials"},
+	// the same names from other services (intended divergence from v0)
+	{"elasticbeanstalk.amazonaws.com", "CreateEnvironment"},
+	{"glue.amazonaws.com", "CreateSession"},
+	{"airflow.amazonaws.com", "DeleteEnvironment"},
 	{"ssm.amazonaws.com", "StartSession"},
 	{"ssm.amazonaws.com", "ResumeSession"},
 	{"ssm.amazonaws.com", "TerminateSession"},
@@ -152,7 +155,7 @@ var pairs = []pair{
 	{"iam.amazonaws.com", "SendTelemetryEvent"},
 	{"batch.amazonaws.com", "SubmitJob"},
 
-	// keep-listed security writes (intended divergence from v0)
+	// security writes the opt-in keep rule surfaces
 	{"cloudtrail.amazonaws.com", "DeleteTrail"},
 	{"cloudtrail.amazonaws.com", "StopLogging"},
 	{"cloudtrail.amazonaws.com", "UpdateTrail"},
@@ -265,19 +268,17 @@ func assertParity(t *testing.T, eng *engine.Engine, rec map[string]any) {
 		v0User = "<nil>"
 	}
 
-	// The keep block is the one intended divergence: keep-listed writes must
-	// always emit, even when v0 dropped them, unless AWS itself made the
-	// call, where v0's AWS Internal drop still applies.
-	userIdentity, _ := rec["userIdentity"].(map[string]any)
-	awsInternal := userIdentity["invokedBy"] == "AWS Internal"
-	if name, _ := d.Preprocess["eventName"].(string); keepListed[name] && !awsInternal {
-		if !d.Emit {
-			t.Errorf("keep-listed %q must emit, dropped by %q\nrecord: %s", name, d.DroppedBy, recordJSON(rec))
+	// The one intended divergence: outside CloudShell, the lifecycle names
+	// are not dropped by drop-cloudshell-lifecycle. Every other rule still
+	// has to agree with v0, so fall through when the record is dropped by
+	// something else in v2 too.
+	if name, _ := d.Preprocess["eventName"].(string); cloudshellLifecycle[name] && rec["eventSource"] != "cloudshell.amazonaws.com" {
+		if d.DroppedBy == "drop-cloudshell-lifecycle" {
+			t.Errorf("%s from %s dropped by drop-cloudshell-lifecycle\nrecord: %s", name, rec["eventSource"], recordJSON(rec))
 		}
-		if v0Emit && fmt.Sprint(d.Preprocess["userName"]) != v0User {
-			t.Errorf("userName = %q, v0 = %q\nrecord: %s", d.Preprocess["userName"], v0User, recordJSON(rec))
+		if !v0Emit {
+			return
 		}
-		return
 	}
 
 	if d.Emit != v0Emit {
@@ -309,17 +310,44 @@ func TestGoldenParityCorpus(t *testing.T) {
 	t.Logf("corpus size: %d records", count)
 }
 
-// The keep veto surfaces security writes from any user agent, but not calls
-// AWS makes on the account's behalf.
-func TestDefaultKeepVeto(t *testing.T) {
-	eng := compileDefault(t)
-	cli := buildRecord(pair{"cloudtrail.amazonaws.com", "UpdateTrail"}, "aws-cli/2.13.0 Python/3.11.4", identities[0], nil, "")
-	if d := eng.Evaluate(cli); !d.Emit || d.KeptBy == "" {
-		t.Errorf("CLI UpdateTrail must be kept, got %+v", d)
+// The default policy ships its keep rule commented out between markers. This
+// uncomments it, so the opt-in stays valid and keeps working.
+func TestOptInKeepRule(t *testing.T) {
+	src := string(policy.DefaultSource())
+	begin := strings.Index(src, "# >>> opt-in keep\n")
+	end := strings.Index(src, "# <<< opt-in keep\n")
+	if begin < 0 || end < begin {
+		t.Fatal("opt-in keep markers not found in default.yaml")
+	}
+	var block strings.Builder
+	for _, line := range strings.Split(src[begin:end], "\n")[1:] {
+		block.WriteString(strings.TrimPrefix(strings.TrimPrefix(line, "#"), " ") + "\n")
+	}
+	p, err := policy.Parse([]byte(src[:begin] + block.String() + src[end:]))
+	if err != nil {
+		t.Fatalf("uncommented keep block does not parse: %v", err)
+	}
+	eng, err := engine.Compile(p)
+	if err != nil {
+		t.Fatalf("uncommented keep block does not compile: %v", err)
+	}
+	if len(p.Keep) != 1 {
+		t.Fatalf("keep rules = %d, want 1", len(p.Keep))
+	}
+
+	const cli = "aws-cli/2.13.0 Python/3.11.4"
+	for _, name := range []string{"UpdateTrail", "PutEventSelectors", "DeleteDetector", "StopConfigurationRecorder"} {
+		rec := buildRecord(pair{"cloudtrail.amazonaws.com", name}, cli, identities[0], nil, "")
+		if d := eng.Evaluate(rec); !d.Emit || d.KeptBy == "" {
+			t.Errorf("CLI %s must be kept, got %+v", name, d)
+		}
 	}
 	internal := buildRecord(pair{"cloudtrail.amazonaws.com", "UpdateTrail"}, "", identities[6], nil, "")
 	if d := eng.Evaluate(internal); d.Emit {
 		t.Errorf("AWS Internal UpdateTrail must stay dropped, kept by %q", d.KeptBy)
+	}
+	if d := eng.Evaluate(buildRecord(pair{"ec2.amazonaws.com", "RunInstances"}, cli, identities[0], nil, "")); d.Emit {
+		t.Error("CLI RunInstances must still be dropped with the keep rule on")
 	}
 }
 

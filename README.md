@@ -170,9 +170,11 @@ With `LOG_LEVEL=debug`, every record additionally logs its decision with a full 
 
 ## Default policy
 
-The embedded [default policy](./internal/policy/default.yaml) keeps console and sign-in activity and drops read-only calls, service-to-service traffic and known noise. Its `keep` rule always surfaces writes that disable logging or detection (`DeleteTrail`, `StopLogging`, `UpdateTrail`, `DeleteFlowLogs`, GuardDuty `DeleteDetector`, `DisableSecurityHub`, AWS Config recorder and delivery-channel shutdowns) and `PutUserPolicy`, whatever tool made the call, unless AWS made it on your behalf (`invokedBy: AWS Internal`). CloudTrail digest, Config and Insights files are ignored.
+The embedded [default policy](./internal/policy/default.yaml) keeps console and sign-in activity and drops read-only calls, service-to-service traffic and known noise. CloudTrail digest, Config and Insights files are ignored.
 
-A golden test runs ~715k records through the policy and a reference implementation of the v0.4.0 rules and requires identical decisions.
+It also ships an **opt-in `keep` rule**, commented out, that alerts on writes disabling logging or detection (CloudTrail trails and event selectors, GuardDuty, Security Hub, AWS Config, VPC flow logs) and `PutUserPolicy` whatever tool made the call, CLI and Terraform included. It is off by default because it covers every account the trail does, so pipelines that manage those services will alert on each change. To enable it, dump the default policy, uncomment the block between the `opt-in keep` markers and deploy it as a [custom policy](#writing-a-policy).
+
+A golden test runs ~715k records through the policy and a reference implementation of the v0.4.0 rules and requires identical decisions. The one intended difference: CloudShell lifecycle names such as `CreateEnvironment` are dropped only from CloudShell, where v0 dropped them from every service.
 
 ## Cost
 

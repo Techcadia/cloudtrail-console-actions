@@ -239,3 +239,14 @@ func TestMixedTextErrorMessage(t *testing.T) {
 		t.Errorf("err = %v, want the mixed-text error", err)
 	}
 }
+
+func TestRefs(t *testing.T) {
+	e := MustCompile("{{ split(preprocess.userName, ':')[1] || preprocess.eventName || userIdentity.preprocess }}")
+	got := e.Refs("preprocess")
+	if !reflect.DeepEqual(got, []string{"userName", "eventName"}) {
+		t.Errorf("Refs = %v, want [userName eventName]", got)
+	}
+	if got := MustCompile("literal").Refs("preprocess"); got != nil {
+		t.Errorf("literal Refs = %v, want nil", got)
+	}
+}

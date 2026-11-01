@@ -22,12 +22,10 @@ same filtering decisions apart from the changes listed below.
   `event_time` is the record's RFC 3339 `eventTime` (v0 logged a display
   string such as `2026-07-07 12:00:00 ... 13:30:00`). New fields:
   `aws_region`, `error_code` and `identity_account_id`.
-- **Security writes always alert.** A `keep` rule emits `DeleteTrail`,
-  `StopLogging`, `UpdateTrail`, `PutUserPolicy`, `DeleteFlowLogs`, GuardDuty
-  `DeleteDetector`, `DisableSecurityHub`, and AWS Config
-  `StopConfigurationRecorder`, `DeleteConfigurationRecorder` and
-  `DeleteDeliveryChannel` even from non-console user agents, unless AWS made
-  the call on your behalf (`invokedBy: AWS Internal`).
+- **CloudShell lifecycle events** (`CreateEnvironment`, `CreateSession`,
+  `DeleteEnvironment`, ...) are dropped only from CloudShell. v0 dropped those
+  names from every service, hiding console actions such as Elastic Beanstalk
+  `CreateEnvironment` and Glue `CreateSession`.
 - **Deduplication** groups by `(account, eventSource, userName, eventName,
   errorCode)`, so the same user and action in different accounts or services
   alert separately. It can be disabled with `--dedupe` / `CCA_DEDUPE`, and
@@ -38,6 +36,10 @@ same filtering decisions apart from the changes listed below.
 
 ### Added
 
+- An opt-in `keep` rule, shipped commented out in the default policy, that
+  alerts on writes disabling logging or detection (CloudTrail trails and
+  event selectors, GuardDuty, Security Hub, AWS Config, VPC flow logs) and
+  `PutUserPolicy` from any user agent, CLI and IaC included.
 - `--validate-only` and `--dump-default-policy` flags.
 - Per-record decision tracing at `LOG_LEVEL=debug`.
 - [Policy language reference](./docs/policy-language.md).
@@ -62,7 +64,8 @@ same filtering decisions apart from the changes listed below.
 - Grouped Slack time windows spanning a month boundary show both dates.
 - The Slack webhook URL is never written to the logs.
 - Malformed or non-CloudTrail S3 objects are logged and skipped instead of
-  failing (and endlessly retrying) the invocation.
+  failing (and endlessly retrying) the invocation, and a single undecodable
+  record skips only that record instead of the whole file.
 - S3 object keys are URL-decoded; SNS- and SQS-wrapped events take the
   bucket's region from the S3 record; `s3:TestEvent` messages no longer fail
   the batch.

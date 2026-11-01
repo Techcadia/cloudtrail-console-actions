@@ -69,18 +69,33 @@ type field struct {
 
 // Compile validates and compiles every expression, operator and regex in the
 // policy. A compiled engine can never fail at evaluation time.
+//
+// It also rejects two mistakes that would otherwise compile into rules that
+// silently always or never match: a condition key with no {{ }} (a constant
+// string), and a preprocess.<name> reference to a field that is not declared,
+// or, inside preprocess, not declared earlier (fields evaluate in order).
 func Compile(p *policy.Policy) (*Engine, error) {
+	c := &compiler{declared: make(map[string]bool, len(p.Preprocess))}
 	e := &Engine{}
 	var err error
 
-	if e.preprocess, err = compileFields("preprocess", p.Preprocess); err != nil {
-		return nil, err
+	for _, f := range p.Preprocess {
+		cf, err := c.field("preprocess", f)
+		if err != nil {
+			return nil, err
+		}
+		e.preprocess = append(e.preprocess, cf)
+		c.declared[f.Name] = true
 	}
-	if e.outputs, err = compileFields("outputs", p.Outputs); err != nil {
-		return nil, err
+	for _, f := range p.Outputs {
+		cf, err := c.field("outputs", f)
+		if err != nil {
+			return nil, err
+		}
+		e.outputs = append(e.outputs, cf)
 	}
 	for _, k := range p.Keep {
-		m, err := compileConditions(k.Match)
+		m, err := c.conditions(k.Match)
 		if err != nil {
 			return nil, fmt.Errorf("keep rule %q: match: %w", k.Name, err)
 		}
@@ -88,11 +103,11 @@ func Compile(p *policy.Policy) (*Engine, error) {
 	}
 	for _, f := range p.Filters {
 		r := rule{name: f.Name}
-		if r.match, err = compileConditions(f.Match); err != nil {
+		if r.match, err = c.conditions(f.Match); err != nil {
 			return nil, fmt.Errorf("filter rule %q: match: %w", f.Name, err)
 		}
 		if f.Exclude != nil {
-			ex, err := compileConditions(*f.Exclude)
+			ex, err := c.conditions(*f.Exclude)
 			if err != nil {
 				return nil, fmt.Errorf("filter rule %q: exclude: %w", f.Name, err)
 			}
@@ -103,48 +118,71 @@ func Compile(p *policy.Policy) (*Engine, error) {
 	return e, nil
 }
 
-func compileFields(section string, fields policy.Fields) ([]field, error) {
-	out := make([]field, 0, len(fields))
-	for _, f := range fields {
-		cf := field{name: f.Name}
-		for i, r := range f.Rules {
-			fr := fieldRule{}
-			var err error
-			if r.Literal != nil {
-				fr.value = expr.Literal(r.Literal)
-			} else if fr.value, err = expr.Compile(r.Value); err != nil {
-				return nil, fmt.Errorf("%s field %q rule %d: %w", section, f.Name, i, err)
-			}
-			if r.When != nil {
-				when, err := compileConditions(*r.When)
-				if err != nil {
-					return nil, fmt.Errorf("%s field %q rule %d: when: %w", section, f.Name, i, err)
-				}
-				fr.when = &when
-			}
-			cf.rules = append(cf.rules, fr)
-		}
-		out = append(out, cf)
-	}
-	return out, nil
+// compiler tracks which preprocess fields an expression may read.
+type compiler struct {
+	declared map[string]bool
 }
 
-func compileConditions(c policy.Conditions) (conditions, error) {
+// checkRefs rejects preprocess.<name> reads of fields not declared yet.
+func (c *compiler) checkRefs(e *expr.Expr) error {
+	for _, name := range e.Refs("preprocess") {
+		if !c.declared[name] {
+			return fmt.Errorf("%s reads preprocess.%s, which is not a preprocess field declared before it", e, name)
+		}
+	}
+	return nil
+}
+
+func (c *compiler) field(section string, f policy.Field) (field, error) {
+	cf := field{name: f.Name}
+	for i, r := range f.Rules {
+		fr := fieldRule{}
+		if r.Literal != nil {
+			fr.value = expr.Literal(r.Literal)
+		} else {
+			v, err := expr.Compile(r.Value)
+			if err == nil {
+				err = c.checkRefs(v)
+			}
+			if err != nil {
+				return field{}, fmt.Errorf("%s field %q rule %d: %w", section, f.Name, i, err)
+			}
+			fr.value = v
+		}
+		if r.When != nil {
+			when, err := c.conditions(*r.When)
+			if err != nil {
+				return field{}, fmt.Errorf("%s field %q rule %d: when: %w", section, f.Name, i, err)
+			}
+			fr.when = &when
+		}
+		cf.rules = append(cf.rules, fr)
+	}
+	return cf, nil
+}
+
+func (c *compiler) conditions(pc policy.Conditions) (conditions, error) {
 	compileList := func(conds []policy.Condition) ([]condition, error) {
 		out := make([]condition, 0, len(conds))
-		for _, pc := range conds {
-			key, err := expr.Compile(pc.Key)
+		for _, cond := range conds {
+			key, err := expr.Compile(cond.Key)
 			if err != nil {
 				return nil, err
 			}
-			cmp, err := match.Compile(match.Operator(pc.Operator), pc.Value)
+			if key.IsLiteral() {
+				return nil, fmt.Errorf("key %q is a constant, not a field; wrap it in {{ }} (e.g. \"{{ %s }}\")", cond.Key, cond.Key)
+			}
+			if err := c.checkRefs(key); err != nil {
+				return nil, err
+			}
+			cmp, err := match.Compile(match.Operator(cond.Operator), cond.Value)
 			if err != nil {
-				return nil, fmt.Errorf("key %s: %w", pc.Key, err)
+				return nil, fmt.Errorf("key %s: %w", cond.Key, err)
 			}
 			out = append(out, condition{
 				key:  key,
 				cmp:  cmp,
-				repr: fmt.Sprintf("%s %s %v", pc.Key, pc.Operator, pc.Value),
+				repr: fmt.Sprintf("%s %s %v", cond.Key, cond.Operator, cond.Value),
 			})
 		}
 		return out, nil
@@ -152,10 +190,10 @@ func compileConditions(c policy.Conditions) (conditions, error) {
 
 	var out conditions
 	var err error
-	if out.any, err = compileList(c.Any); err != nil {
+	if out.any, err = compileList(pc.Any); err != nil {
 		return out, err
 	}
-	if out.all, err = compileList(c.All); err != nil {
+	if out.all, err = compileList(pc.All); err != nil {
 		return out, err
 	}
 	return out, nil
@@ -176,9 +214,10 @@ func (e *Engine) Explain(record map[string]any) (Decision, []string) {
 }
 
 func (e *Engine) evaluate(record map[string]any, tr *tracer) Decision {
-	// The scope is a shallow clone so preprocess.* never leaks into the
-	// caller's record.
-	scope := maps.Clone(record)
+	// The scope is a shallow copy so preprocess.* never leaks into the
+	// caller's record. It is made explicitly so a nil record cannot panic.
+	scope := make(map[string]any, len(record)+1)
+	maps.Copy(scope, record)
 	pp := make(map[string]any, len(e.preprocess))
 	scope["preprocess"] = pp
 	for i := range e.preprocess {
