@@ -228,3 +228,61 @@ run "slack_settings" {
     error_message = "Slack settings should merge with the provided environment variables"
   }
 }
+
+run "policy_default" {
+  command = apply
+
+  assert {
+    condition     = length(aws_lambda_layer_version.policy) == 0 && length(aws_lambda_function.default.layers) == 0
+    error_message = "No policy layer should exist when policy is unset"
+  }
+
+  assert {
+    condition     = !contains(keys(aws_lambda_function.default.environment[0].variables), "CCA_POLICY_FILE")
+    error_message = "CCA_POLICY_FILE must be unset so the embedded default policy is used"
+  }
+}
+
+run "policy_custom" {
+  command = apply
+
+  variables {
+    policy = <<-YAML
+      apiVersion: cca/v1
+      kind: FilterPolicy
+      filters:
+        - name: drop-reads
+          action: skip
+          match:
+            all:
+              - { key: "{{ eventName }}", operator: AnyIn, value: ["Get*"] }
+    YAML
+  }
+
+  assert {
+    condition     = aws_lambda_layer_version.policy[0].layer_name == "testConsole-policy"
+    error_message = "Policy layer should be named after the function"
+  }
+
+  assert {
+    condition     = aws_lambda_function.default.layers == tolist([aws_lambda_layer_version.policy[0].arn])
+    error_message = "Lambda should attach the policy layer"
+  }
+
+  assert {
+    condition     = aws_lambda_function.default.environment[0].variables["CCA_POLICY_FILE"] == "/opt/policy.yaml"
+    error_message = "CCA_POLICY_FILE should point at the layer's policy.yaml"
+  }
+}
+
+run "policy_rejects_non_policy_yaml" {
+  command = plan
+
+  variables {
+    policy = "kind: NetworkPolicy"
+  }
+
+  expect_failures = [
+    var.policy,
+  ]
+}

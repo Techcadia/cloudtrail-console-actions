@@ -53,13 +53,25 @@ Slack delivery:
 
 ## Writing a policy
 
-Start from the embedded ruleset:
+Start from the embedded ruleset. From a checkout (the released `bootstrap` is a Linux binary, so run it from source on other platforms):
 
 ```shell
-./bootstrap --dump-default-policy > policy.yaml
+go run ./cmd/lambda --dump-default-policy > policy.yaml
 # edit...
-./bootstrap --config-file policy.yaml --validate-only
+go run ./cmd/lambda --config-file policy.yaml --validate-only
 ```
+
+Deploy it by passing the YAML to the Terraform module, which ships it to the Lambda as a layer and points `CCA_POLICY_FILE` at it:
+
+```hcl
+module "default" {
+  source = "../modules/cloudtrailconsole/s3"
+  # ...
+  policy = file("${path.module}/policy.yaml")
+}
+```
+
+Leave `policy` unset to use the embedded default.
 
 A policy has four sections (see [policy.schema.json](./policy.schema.json) and the inline documentation in the [default policy](./internal/policy/default.yaml)):
 

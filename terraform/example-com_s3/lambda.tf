@@ -25,6 +25,10 @@ module "default" {
     retention_in_days = 90
   }
 
+  # Replace the embedded default filter policy (start from
+  # `bootstrap --dump-default-policy`). It ships as a Lambda layer.
+  # policy = file("${path.module}/policy.yaml")
+
   # slack does not need to be defined for cloudwatch logs to be emitted
   slack = {
     # If you have a single account

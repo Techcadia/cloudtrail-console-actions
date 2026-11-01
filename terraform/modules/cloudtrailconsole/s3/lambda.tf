@@ -9,6 +9,7 @@ resource "aws_lambda_function" "default" {
   reserved_concurrent_executions = lookup(var.lambda, "reserved_concurrent_executions", 10)
   role                           = aws_iam_role.default.arn
   architectures                  = lookup(var.lambda, "architectures", ["arm64"])
+  layers                         = aws_lambda_layer_version.policy[*].arn
 
   environment {
     variables = merge(
@@ -16,6 +17,7 @@ resource "aws_lambda_function" "default" {
       lookup(var.slack, "name", null) != null ? { "SLACK_NAME" = var.slack["name"] } : {},
       lookup(var.slack, "webhook", null) != null ? { "SLACK_WEBHOOK" = var.slack["webhook"] } : {},
       lookup(var.slack, "channel", null) != null ? { "SLACK_CHANNEL" = var.slack["channel"] } : {},
+      var.policy != null ? { "CCA_POLICY_FILE" = "/opt/policy.yaml" } : {},
       { for k, v in lookup(var.lambda, "environment_variables", {}) : k => v },
     )
   }

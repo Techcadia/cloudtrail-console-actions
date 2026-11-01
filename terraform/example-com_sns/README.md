@@ -37,6 +37,10 @@ module "default" {
     retention_in_days = 90
   }
 
+  # Replace the embedded default filter policy (start from
+  # `bootstrap --dump-default-policy`). It ships as a Lambda layer.
+  # policy = file("${path.module}/policy.yaml")
+
   # slack does not need to be defined for cloudwatch logs to be emitted
   slack = {
     # If you have a single account
@@ -60,13 +64,18 @@ module "default" {
 
 ## Requirements
 
-No requirements.
+| Name | Version |
+|------|---------|
+| <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.3 |
+| <a name="requirement_archive"></a> [archive](#requirement\_archive) | >= 2.4 |
+| <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 6.0 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| <a name="provider_aws"></a> [aws](#provider\_aws) | n/a |
+| <a name="provider_archive"></a> [archive](#provider\_archive) | >= 2.4 |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | >= 6.0 |
 
 ## Modules
 
@@ -80,8 +89,10 @@ No modules.
 | [aws_iam_role.default](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
 | [aws_iam_role_policy.default](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy) | resource |
 | [aws_lambda_function.default](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_function) | resource |
+| [aws_lambda_layer_version.policy](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_layer_version) | resource |
 | [aws_lambda_permission.default](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_permission) | resource |
 | [aws_sns_topic_subscription.default](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/sns_topic_subscription) | resource |
+| [archive_file.policy](https://registry.terraform.io/providers/hashicorp/archive/latest/docs/data-sources/file) | data source |
 | [aws_caller_identity.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/caller_identity) | data source |
 | [aws_iam_policy_document.default](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
 | [aws_iam_policy_document.sts](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
@@ -95,6 +106,7 @@ No modules.
 | <a name="input_lambda"></a> [lambda](#input\_lambda) | Lambda Settings | `any` | `{}` | no |
 | <a name="input_logs"></a> [logs](#input\_logs) | Log group settings | <pre>object({<br/>    create            = optional(bool, false)<br/>    name              = optional(string)<br/>    retention_in_days = optional(number, 30)<br/>    skip_destroy      = optional(bool, false)<br/>    log_group_class   = optional(string, "STANDARD")<br/>    kms_key_id        = optional(string)<br/>  })</pre> | `{}` | no |
 | <a name="input_name"></a> [name](#input\_name) | Name of the Lambda, IAM Role and CloudWatch Log Groups | `string` | `"cloudTrailConsole"` | no |
+| <a name="input_policy"></a> [policy](#input\_policy) | FilterPolicy YAML replacing the embedded default policy, e.g. file("policy.yaml"). Null keeps the default. Check it first with `bootstrap --config-file policy.yaml --validate-only`. | `string` | `null` | no |
 | <a name="input_s3"></a> [s3](#input\_s3) | S3 Bucket Settings | `any` | `{}` | no |
 | <a name="input_slack"></a> [slack](#input\_slack) | Slack Settings | `any` | `{}` | no |
 | <a name="input_sns"></a> [sns](#input\_sns) | SNS Settings | `any` | `{}` | no |
