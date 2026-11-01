@@ -9,18 +9,22 @@ one `{{ expression }}`.
 
 ```
 expr   := chain ("||" chain)*
-chain  := head ("." ident | "[" int "]")*
+chain  := head ("." name | "[" int "]")*
 head   := 'string' | true | false | null
         | func "(" expr ("," expr)* ")"
-        | ident
+        | name
+name   := ident | "quoted ident"
 ```
 
 - **`ident`** — a bare name looked up in the record (or `preprocess`), e.g.
   `eventSource`, `preprocess.eventName`.
-- **`.ident`** — descends into a nested object: `userIdentity.principalId`.
+- **`"quoted ident"`** — a field whose name is not an identifier:
+  `requestParameters."x-amz-acl"`.
+- **`.name`** — descends into a nested object: `userIdentity.principalId`.
 - **`[n]`** — indexes into an array (0-based): `split(principalId, ':')[1]`.
   A non-integer or overflowing index is a **compile-time error**.
-- **`'string'`** — a single-quoted string literal.
+- **`'string'`** — a single-quoted string literal. In strings and quoted
+  names, `\` escapes the closing quote or a backslash: `'it\'s'`.
 - **`true` / `false` / `null`** — boolean and null literals.
 - **`a || b`** — returns `a` unless `a` is **falsy**, then `b`. Chains
   left-to-right; commonly used as `{{ userAgent || '' }}` to default a missing
@@ -33,6 +37,25 @@ head   := 'string' | true | false | null
 | `trimPrefix(s, prefix)` | `s` with `prefix` removed if present |
 | `contains(s, substr)` | `true` if `s` contains `substr` |
 | `split(s, sep)` | array of `s` split on `sep` |
+| `keys(obj)` | sorted array of `obj`'s field names, e.g. `keys(userIdentity) AllIn [accountId]` (identity has only an account) |
+
+## Literal values
+
+A field value with no `{{` is a literal. Quoting decides its type, as in YAML:
+`flag: true` is the boolean `true` and `count: 3` a number, while
+`flag: "true"` is the string `"true"`. Use `{{ true }}` or the unquoted form
+when a later condition compares against a boolean.
+
+## Comparing values
+
+- `Equals` / set membership compare **two strings exactly**: `"01"` is not
+  `"1"`. A number compares numerically against a number or a numeric string
+  (`value: 32` matches the JSON number `32` and the string `"32"`).
+- **Quote zero-padded identifiers.** Unquoted, YAML reads `012345670123` as
+  an octal number (1402433619), so the loader rejects unquoted numbers with a
+  leading zero: write account IDs as `"012345670123"`.
+- The loader is strict: unknown keys (including inside `when:` blocks and
+  conditions) and duplicate field names are errors.
 
 ## Evaluation is total (never errors)
 

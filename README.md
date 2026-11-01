@@ -12,7 +12,7 @@ Every CloudTrail log file delivered to S3 (directly, or via SNS/SQS notification
 2. **decide** — the record is **emitted unless** a `skip` rule applies (`match` and not `exclude`) **and** no `keep` rule matches. `keep` beats `skip`; skip rules combine as a union.
 3. **outputs** — emitted records are projected to the log/Slack schema defined in the policy's `outputs:` section.
 
-Emitted records are grouped (deduplicated) by `(userName, eventName, errorCode)` and flushed as one notification with a count and time window. Deduplication can be disabled (see below).
+Emitted records are grouped (deduplicated) by `(account, eventSource, userName, eventName, errorCode)` and flushed as one notification with a count and time window. Deduplication can be disabled (see below).
 
 <img src="docs/assets/flow-diagram-2021-05-14.png" alt="flow-diagram-2021-05-14" width="50%" height="50%" />
 
@@ -35,7 +35,7 @@ Flags beat environment variables beat defaults:
 | Flag | Env | Default | Purpose |
 | --- | --- | --- | --- |
 | `--config-file` | `CCA_POLICY_FILE` | embedded policy | Path to a FilterPolicy YAML overriding the baked-in v1-compatible ruleset |
-| `--dedupe` | `CCA_DEDUPE` | `true` | Group identical `(user, event, error)` records into one `Nx` notification; `false` alerts per record |
+| `--dedupe` | `CCA_DEDUPE` | `true` | Group identical `(account, source, user, event, error)` records into one `Nx` notification; `false` alerts per record |
 | `--log-level` | `LOG_LEVEL` | `info` | `debug` explains every rule decision per record |
 | `--validate-only` | | | Parse + compile the policy, report, exit |
 | `--dump-default-policy` | | | Print the embedded policy to stdout (a starting point for overrides) |
@@ -45,7 +45,7 @@ Slack delivery (unchanged from v1):
 * `SLACK_WEBHOOK` — (Optional) webhook URL; unset means logs only.
 * `SLACK_CHANNEL` — (Optional) channel to post to.
 * `SLACK_NAME` — (Optional) default display name for the account.
-* `SLACK_NAME_${AWS_ACCOUNT_NUMBER}` — (Optional) per-account display name; keys on the identity's own account id (`identity_account_id` output). Emojis like `:maple_leaf:` work.
+* `SLACK_NAME_${AWS_ACCOUNT_NUMBER}` — (Optional) per-account display name; keys on the recipient account (`account_id` output), as v1 v0.4.0 does. Emojis like `:maple_leaf:` work.
 
 ## Writing a policy
 
@@ -101,7 +101,7 @@ outputs:               # projection of emitted records to the log/Slack schema
 * `GreaterThan(OrEquals)` / `LessThan(OrEquals)` — numeric
 * `Matches` / `NotMatches` — RE2 regex list, any-of
 
-**Outputs contract:** every `outputs:` field lands on the `Event` log line. The Slack notifier reads the documented keys `event_source`, `user_name`, `account_id`, `identity_account_id`, `error_code`, `event_id` and `aws_region` — override them to change what notifications show.
+**Outputs contract:** every `outputs:` field lands on the `Event` log line. The Slack notifier reads `event_source`, `user_name`, `account_id`, `error_code`, `event_id` and `aws_region` — override them to change what notifications show. Its headline event name is `preprocess.eventName` (the grouping key), not the `event_name` output.
 
 ## Observability
 
@@ -152,10 +152,11 @@ With `LOG_LEVEL=debug`, every record additionally logs its decision with a full 
 
 ## Migrating from v1
 
-The embedded policy is a golden-tested port of the v1 (v0.3.2) ruleset — a corpus of ~350k records must produce identical decisions for both implementations. Two deliberate changes:
+The embedded policy is a golden-tested port of the v1 (v0.4.0) ruleset. A ~680k-record corpus must produce identical decisions under v2 and a test-only port of v1; that port was itself cross-checked against the real v0.4.0 `FilterRecords` over the same corpus with zero mismatches. Deliberate changes:
 
-* **keep rules** — `DeleteTrail`, `StopLogging`, `PutUserPolicy`, `DeleteFlowLogs` and `UpdateTrail` are always emitted, even from non-console user agents that v1 dropped.
-* **deduplication** is configurable (`CCA_DEDUPE`), and flush order is deterministic.
+* **keep rules** — writes that disable logging or detection (`DeleteTrail`, `StopLogging`, `UpdateTrail`, `DeleteFlowLogs`, GuardDuty `DeleteDetector`, `DisableSecurityHub`, AWS Config recorder/delivery-channel shutdowns) and `PutUserPolicy` are always emitted, even from non-console user agents that v1 dropped — unless AWS made the call (`invokedBy: AWS Internal`).
+* **deduplication** is configurable (`CCA_DEDUPE`), groups also by account and event source, and flush order is deterministic.
+* **CloudTrail Insights files** are ignored (they have no acting user).
 
 The `Event` log contract (`msg == "Event"`, field names) and all `SLACK_*` variables are unchanged. `logrus`-style lowercase `"level":"info"` is now slog-style `"level":"INFO"`. See the [CHANGELOG](./CHANGELOG.md) for the full list of changes.
 
