@@ -39,8 +39,14 @@ jobs:
           if [[ "$TAG" == *-* ]]; then
             prerelease=(--prerelease)
           fi
-          # Attach to a release drafted for this tag, or create one.
-          if gh release view "$TAG" >/dev/null 2>&1; then
+          # Attach to a draft release for this tag, or create one. A release
+          # that is already published is never modified, so re-pushing a tag
+          # cannot replace assets people may have deployed.
+          if draft="$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            if [[ "$draft" != "true" ]]; then
+              echo "::error::release $TAG is already published; not replacing its assets"
+              exit 1
+            fi
             gh release upload "$TAG" dist/function_*.zip dist/sha256sums.txt --clobber
           else
             gh release create "$TAG" dist/function_*.zip dist/sha256sums.txt \

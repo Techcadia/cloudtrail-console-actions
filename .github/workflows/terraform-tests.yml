@@ -7,6 +7,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 env:
   TF_IN_AUTOMATION: true
   # terraform test uses mock_provider for every run in these modules, so no
