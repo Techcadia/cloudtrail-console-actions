@@ -11,7 +11,7 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/Techcadia/cloudtrail-console-actions/internal/collector"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/collector"
 )
 
 // LogSink writes one structured "Event" line per group. The fields are

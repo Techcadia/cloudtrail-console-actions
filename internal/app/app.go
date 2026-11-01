@@ -7,10 +7,10 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/Techcadia/cloudtrail-console-actions/internal/collector"
-	"github.com/Techcadia/cloudtrail-console-actions/internal/engine"
-	"github.com/Techcadia/cloudtrail-console-actions/internal/event"
-	"github.com/Techcadia/cloudtrail-console-actions/internal/trail"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/collector"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/engine"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/event"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/trail"
 )
 
 // App processes Lambda invocations: fetch each referenced CloudTrail file,

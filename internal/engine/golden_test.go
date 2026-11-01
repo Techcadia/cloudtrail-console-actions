@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Techcadia/cloudtrail-console-actions/internal/engine"
-	"github.com/Techcadia/cloudtrail-console-actions/internal/policy"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/engine"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/policy"
 )
 
 // The golden parity suite proves the embedded v2 policy reproduces the v0

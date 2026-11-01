@@ -12,11 +12,11 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
-	"github.com/Techcadia/cloudtrail-console-actions/internal/collector"
-	"github.com/Techcadia/cloudtrail-console-actions/internal/engine"
-	"github.com/Techcadia/cloudtrail-console-actions/internal/event"
-	"github.com/Techcadia/cloudtrail-console-actions/internal/policy"
-	"github.com/Techcadia/cloudtrail-console-actions/internal/trail"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/collector"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/engine"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/event"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/policy"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/trail"
 )
 
 const logFileJSON = `{"Records":[

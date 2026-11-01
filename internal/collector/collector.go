@@ -8,7 +8,7 @@ package collector
 import (
 	"time"
 
-	"github.com/Techcadia/cloudtrail-console-actions/internal/event"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/event"
 )
 
 // Entry is one emitted record with everything the sinks need.

@@ -3,8 +3,8 @@ package engine_test
 import (
 	"testing"
 
-	"github.com/Techcadia/cloudtrail-console-actions/internal/engine"
-	"github.com/Techcadia/cloudtrail-console-actions/internal/policy"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/engine"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/policy"
 )
 
 // Benchmark records exercising the three characteristic paths.

@@ -24,12 +24,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
-	"github.com/Techcadia/cloudtrail-console-actions/internal/app"
-	"github.com/Techcadia/cloudtrail-console-actions/internal/collector"
-	"github.com/Techcadia/cloudtrail-console-actions/internal/engine"
-	"github.com/Techcadia/cloudtrail-console-actions/internal/notify"
-	"github.com/Techcadia/cloudtrail-console-actions/internal/policy"
-	"github.com/Techcadia/cloudtrail-console-actions/internal/trail"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/app"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/collector"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/engine"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/notify"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/policy"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/trail"
 )
 
 // version is stamped at build time (make build sets -X main.version).

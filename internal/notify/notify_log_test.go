@@ -10,8 +10,8 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 
-	"github.com/Techcadia/cloudtrail-console-actions/internal/collector"
-	"github.com/Techcadia/cloudtrail-console-actions/internal/event"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/collector"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/event"
 )
 
 // group builds an alert group shaped like the default policy's outputs.

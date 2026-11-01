@@ -18,9 +18,9 @@ import (
 	"maps"
 	"strings"
 
-	"github.com/Techcadia/cloudtrail-console-actions/internal/expr"
-	"github.com/Techcadia/cloudtrail-console-actions/internal/match"
-	"github.com/Techcadia/cloudtrail-console-actions/internal/policy"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/expr"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/match"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/policy"
 )
 
 // Engine is a compiled FilterPolicy, safe for concurrent use.

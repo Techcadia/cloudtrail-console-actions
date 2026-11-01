@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Techcadia/cloudtrail-console-actions/internal/collector"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/collector"
 )
 
 // Slack posts one message per group to an incoming webhook.

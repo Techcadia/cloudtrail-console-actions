@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Techcadia/cloudtrail-console-actions/internal/policy"
+	"github.com/Techcadia/cloudtrail-console-actions/v2/internal/policy"
 )
 
 func compileYAML(t *testing.T, src string) *Engine {

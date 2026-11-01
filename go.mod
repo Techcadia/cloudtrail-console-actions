@@ -1,4 +1,4 @@
-module github.com/Techcadia/cloudtrail-console-actions
+module github.com/Techcadia/cloudtrail-console-actions/v2
 
 go 1.27
 
