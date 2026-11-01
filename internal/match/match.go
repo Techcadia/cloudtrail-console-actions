@@ -40,8 +40,8 @@ type Comparison struct {
 	regexes  []*regexp.Regexp // Matches / NotMatches
 }
 
-// Compile validates the (operator, value) pair — mirroring the policy schema:
-// set and regex operators take a non-empty list, everything else a scalar —
+// Compile validates the (operator, value) pair, mirroring the policy schema
+// (set and regex operators take a non-empty list, everything else a scalar),
 // and precompiles wildcards and regexes.
 func Compile(op Operator, value any) (*Comparison, error) {
 	c := &Comparison{op: op}
@@ -112,7 +112,7 @@ func (c *Comparison) Eval(key any) bool {
 			for i, s := range k {
 				keys[i] = s
 			}
-		default: // scalar — the overwhelmingly common case
+		default: // scalar, the overwhelmingly common case
 			in := c.inSet(key)
 			if c.op == AnyIn || c.op == AllIn {
 				return in
@@ -221,7 +221,7 @@ func scalarList(op Operator, value any) ([]any, error) {
 	return items, nil
 }
 
-// equalScalar compares exactly — no wildcards — with numeric cross-type
+// equalScalar compares exactly (no wildcards) with numeric cross-type
 // coercion (YAML ints vs JSON float64s, or a number against a numeric
 // string). Two strings compare as strings: "01" is not "1", so zero-padded
 // identifiers such as account IDs never collide. nil equals nothing.
@@ -266,7 +266,7 @@ func toNumber(v any) (float64, bool) {
 }
 
 // looksNumeric reports whether s begins like a float (digit, sign, or '.'). It
-// deliberately rejects the "inf"/"nan" forms ParseFloat also accepts — they
+// deliberately rejects the "inf"/"nan" forms ParseFloat also accepts; they
 // don't occur in CloudTrail data and the golden corpus guards the difference.
 func looksNumeric(s string) bool {
 	if s == "" {

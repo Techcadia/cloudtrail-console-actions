@@ -18,9 +18,9 @@ import (
 
 // Slack posts one message per group to an incoming webhook.
 //
-// The message renders from the policy's outputs: projection — the keys read
+// The message renders from the policy's outputs: projection (the keys read
 // are event_source, user_name, account_id, error_code, event_id and
-// aws_region — plus the group metadata: count, time window, and the
+// aws_region) plus the group metadata: count, time window, and the
 // preprocess-derived event name used for grouping (preprocess.eventName, not
 // the event_name output). Override those output fields in the policy to
 // change what Slack shows.

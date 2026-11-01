@@ -48,7 +48,7 @@ func (a *App) processObject(ctx context.Context, src event.Record, col *collecto
 	file, err := trail.Fetch(ctx, a.NewObjectGetter(src.AWSRegion), bucket, key)
 	if err != nil {
 		// A poison object (not a CloudTrail log file) must not fail the whole
-		// invocation — async retries would reprocess it forever. Log and skip;
+		// invocation, because async retries would reprocess it forever. Log and skip;
 		// only genuine fetch errors (S3/network) propagate.
 		if errors.Is(err, trail.ErrMalformed) {
 			a.Logger.LogAttrs(ctx, slog.LevelWarn, "skipping unparseable object",
@@ -114,7 +114,7 @@ func (a *App) processRecord(ctx context.Context, record map[string]any, src even
 	})
 }
 
-// strOr stringifies the first non-nil, non-empty value — custom policies may
+// strOr stringifies the first non-nil, non-empty value; custom policies may
 // omit the preprocess fields the collector groups by.
 func strOr(v, fallback any) string {
 	if s := str(v); s != "" {

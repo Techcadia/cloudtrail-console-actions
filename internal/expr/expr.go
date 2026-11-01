@@ -11,7 +11,7 @@
 // backslash escapes the closing quote or another backslash.
 //
 // Supported functions: trimPrefix(s, prefix), contains(s, substr), split(s, sep),
-// keys(object) — the object's field names, sorted.
+// keys(object), which returns the object's field names, sorted.
 //
 // Evaluation is total: missing fields, type mismatches and out-of-range
 // indexes yield nil rather than errors, and "a || b" returns b when a is
@@ -415,7 +415,6 @@ func (p *parser) parseInt() (int, error) {
 	if p.pos == start {
 		return 0, fmt.Errorf("expected integer index at offset %d", p.pos)
 	}
-	// Atoi reports overflow instead of silently wrapping like a manual accumulator.
 	n, err := strconv.Atoi(p.input[start:p.pos])
 	if err != nil {
 		return 0, fmt.Errorf("invalid integer index %q at offset %d: %w", p.input[start:p.pos], start, err)

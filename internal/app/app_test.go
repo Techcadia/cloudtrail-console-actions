@@ -114,8 +114,8 @@ func TestHandleSkipsPoisonObject(t *testing.T) {
 		Alert:           func(_ context.Context, g *collector.Group) { alerts = append(alerts, g) },
 	}
 
-	// A poison object must not fail the invocation (which would retry forever)
-	// — it is logged and skipped.
+	// A poison object must not fail the invocation (which would retry
+	// forever); it is logged and skipped.
 	if err := a.Handle(context.Background(), s3Event()); err != nil {
 		t.Fatalf("poison object failed the invocation: %v", err)
 	}

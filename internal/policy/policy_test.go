@@ -283,7 +283,7 @@ filters:
 		},
 		{
 			// when: blocks are decoded from a node, outside KnownFields
-			// mode; a typo there used to drop the clause silently.
+			// mode, so unknown keys must be rejected explicitly.
 			name: "unknown key in when block",
 			src: `
 apiVersion: cca/v1

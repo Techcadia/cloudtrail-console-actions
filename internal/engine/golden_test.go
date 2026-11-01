@@ -18,8 +18,9 @@ import (
 // about, crossed with user agents, identities, request parameters and error
 // codes.
 //
-// The single agreed divergence is the keep: block — security-critical writes
-// are emitted even when v1 would have dropped them — asserted explicitly.
+// The single intended divergence is the keep: block. Security-critical writes
+// are emitted even when v1 would have dropped them, and this is asserted
+// explicitly.
 
 // keepListed are the preprocess.eventName values the default keep rule vetoes.
 var keepListed = map[string]bool{
@@ -151,7 +152,7 @@ var pairs = []pair{
 	{"iam.amazonaws.com", "SendTelemetryEvent"},
 	{"batch.amazonaws.com", "SubmitJob"},
 
-	// keep-listed security writes (agreed v2 divergence)
+	// keep-listed security writes (intended divergence from v1)
 	{"cloudtrail.amazonaws.com", "DeleteTrail"},
 	{"cloudtrail.amazonaws.com", "StopLogging"},
 	{"cloudtrail.amazonaws.com", "UpdateTrail"},
@@ -264,8 +265,8 @@ func assertParity(t *testing.T, eng *engine.Engine, rec map[string]any) {
 		v1User = "<nil>"
 	}
 
-	// The keep block is the one agreed divergence: keep-listed writes must
-	// always emit, even when v1 dropped them — unless AWS itself made the
+	// The keep block is the one intended divergence: keep-listed writes must
+	// always emit, even when v1 dropped them, unless AWS itself made the
 	// call, where v1's AWS Internal drop still applies.
 	userIdentity, _ := rec["userIdentity"].(map[string]any)
 	awsInternal := userIdentity["invokedBy"] == "AWS Internal"

@@ -1,4 +1,4 @@
-# CloudTrail Console Actions — default filter policy
+# CloudTrail Console Actions: default filter policy
 # Faithful translation of the v1 `FilterRecords` ruleset (v0.4.0), baked into
 # the binary. Override with --config-file or CCA_POLICY_FILE.
 # Rules are {key, operator, value} conditions grouped under any:/all: blocks.
@@ -31,7 +31,7 @@
 apiVersion: cca/v1
 kind: FilterPolicy
 
-# ── Stage 1: preprocess — working values read by filters as preprocess.* ─────
+# ── Stage 1: preprocess (working values read by filters as preprocess.*) ───
 preprocess:
 
   # v1: eventName is locally reassigned for billingconsole (TrimPrefix);
@@ -63,9 +63,9 @@ preprocess:
     - value: "{{ userIdentity.principalId }}"
 
 # ── Stage 2: keep (global veto, beats every skip) ────────────────────────────
-# NOT present in v1 — this is the agreed v2 enhancement. A keep rule that
-# applies forces EMIT even if a skip rule matched. No `exclude` permitted here,
-# so the veto is absolute and the policy stays provably terminating.
+# Not present in v1. A keep rule that applies forces EMIT even if a skip rule
+# matched. No `exclude` is permitted here, so the veto is absolute and the
+# policy stays provably terminating.
 #
 # Scoped to writes that disable logging or detection (rarely legitimate from
 # automation) plus PutUserPolicy; IaC-routine writes such as PutBucketPolicy
@@ -108,8 +108,8 @@ filters:
       all:
         - { key: "{{ eventSource }}", operator: Equals, value: codecommit.amazonaws.com }
 
-  # v0.4.0: cognito events that cannot be attributed to a user — the identity
-  # carries nothing but an accountId, or is typed Unknown.
+  # v0.4.0: cognito events that cannot be attributed to a user, because the
+  # identity carries nothing but an accountId or is typed Unknown.
   - name: drop-cognito-unattributable
     action: skip
     match:
@@ -220,7 +220,7 @@ filters:
       all:
         - { key: "{{ preprocess.eventName }}", operator: AnyIn, value: ["*VirtualMFADevice"] }
 
-  # v1 does NOT guard these cloudshell lifecycle events by eventSource —
+  # v1 does NOT guard these cloudshell lifecycle events by eventSource;
   # they are dropped regardless of source. Kept faithful; revisit if undesired.
   - name: drop-cloudshell-lifecycle
     action: skip
@@ -360,7 +360,7 @@ filters:
         - { key: "{{ requestParameters.description }}",   operator: Matches, value: ['^AWS Lambda VPC ENI-'] }
 
   # v1 AssumeRole is A AND (B OR C OR D); B is itself (b1 AND b2). The flat
-  # grammar can't nest AND inside OR, so it splits into two skip rules — their
+  # grammar can't nest AND inside OR, so it splits into two skip rules whose
   # union reproduces the OR exactly.
   - name: drop-iam-assumerole-service-principal
     action: skip
@@ -403,7 +403,7 @@ filters:
 
   # "block all UAs except recognized console agents." match = any UA present;
   # exclude = the console allow-list (carve-out). A record with no userAgent
-  # never matches, so it is emitted — mirroring `if usa, ok := ...; ok`.
+  # never matches, so it is emitted, mirroring `if usa, ok := ...; ok`.
   - name: drop-non-console-user-agent
     action: skip
     match:
@@ -425,13 +425,13 @@ filters:
 
 # ── Stage 3: emitted projection ──────────────────────────────────────────────
 # Every field lands on the "Event" log line. The Slack notifier reads
-# event_source, user_name, account_id, error_code, event_id and aws_region —
+# event_source, user_name, account_id, error_code, event_id and aws_region;
 # override them here to change what notifications show. Slack's headline
 # event name is preprocess.eventName (the grouping key), not event_name, and
 # SLACK_NAME_<accountId> lookups key on account_id.
 outputs:
   event_source: "{{ eventSource }}"
-  event_name:   "{{ eventName }}"          # raw record field — NOT the trimmed preprocess.eventName
+  event_name:   "{{ eventName }}"          # raw record field, NOT the trimmed preprocess.eventName
   event_time:   "{{ eventTime }}"
   event_id:     "{{ eventID }}"
   aws_region:   "{{ awsRegion }}"
@@ -444,7 +444,7 @@ outputs:
   identity_account_id: "{{ userIdentity.accountId || '' }}"
 
   # v1: cognito-idp keeps userIdentity.accountId (the recipientAccountId
-  # branch there is a discarded fmt.Sprintf — a dead no-op). Everything else
+  # branch there is a discarded fmt.Sprintf, a dead no-op). Everything else
   # lets recipientAccountId override.
   account_id:
     - when:

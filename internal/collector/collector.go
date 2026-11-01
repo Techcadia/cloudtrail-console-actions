@@ -15,10 +15,10 @@ import (
 type Entry struct {
 	Record      map[string]any // the raw CloudTrail record
 	Outputs     map[string]any // the policy's outputs projection
-	AccountID   string         // the account_id output — part of the group key
-	EventSource string         // raw eventSource — part of the group key
-	UserName    string         // preprocess.userName — part of the group key
-	EventName   string         // preprocess.eventName — part of the group key
+	AccountID   string         // the account_id output; part of the group key
+	EventSource string         // raw eventSource; part of the group key
+	UserName    string         // preprocess.userName; part of the group key
+	EventName   string         // preprocess.eventName; part of the group key
 	ErrorCode   string         // raw errorCode, "" when absent
 	EventID     string
 	Time        time.Time
@@ -80,9 +80,8 @@ func (c *Collector) Add(e Entry) {
 	if g, ok := c.groups[k]; ok {
 		g.Count++
 		g.Last = e.Time
-		// The most recent record wins wholesale — record, outputs, event ID and
-		// source file — so a group's fields always describe one record. (v1
-		// kept the first source file next to the latest record.)
+		// The most recent record wins wholesale (record, outputs, event ID and
+		// source file), so a group's fields always describe one record.
 		g.Entry = e
 		return
 	}

@@ -17,7 +17,7 @@ import (
 )
 
 // ErrMalformed marks an object whose bytes could not be gunzipped or decoded
-// as a CloudTrail log file — a poison object the caller should log and skip
+// as a CloudTrail log file: a poison object the caller should log and skip
 // rather than fail the whole invocation on (which would retry indefinitely).
 var ErrMalformed = errors.New("malformed log file")
 
@@ -65,7 +65,8 @@ func Fetch(ctx context.Context, client ObjectGetter, bucket, key string) (*File,
 }
 
 // Decode reads a CloudTrail log file, gunzipping when the stream carries the
-// gzip magic bytes — more reliable than trusting the object's Content-Type.
+// gzip magic bytes, which is more reliable than trusting the object's
+// Content-Type.
 //
 // Only bad bytes are ErrMalformed. A failure reading the stream itself (a
 // connection reset mid-body) is returned unwrapped so the invocation fails

@@ -15,8 +15,8 @@ import (
 )
 
 // LogSink writes one structured "Event" line per group. The fields are
-// exactly the policy's outputs keys — add or change fields in the policy's
-// outputs: section — plus count and s3_uri. Existing CloudWatch queries
+// exactly the policy's outputs keys (add or change fields in the policy's
+// outputs: section), plus count and s3_uri. Existing CloudWatch queries
 // (filter msg == "Event") keep working.
 type LogSink struct {
 	Logger *slog.Logger

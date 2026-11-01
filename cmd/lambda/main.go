@@ -79,9 +79,7 @@ func run() error {
 		return fmt.Errorf("loading AWS config: %w", err)
 	}
 
-	// One S3 client per log-file region, reused across invocations. A plain
-	// map is enough: the Lambda runtime runs one invocation at a time per
-	// process.
+	// One S3 client per log-file region, reused across invocations.
 	clients := map[string]*s3.Client{}
 	newObjectGetter := func(region string) trail.ObjectGetter {
 		c, ok := clients[region]
@@ -112,7 +110,7 @@ func run() error {
 }
 
 // buildAlert composes the sinks: the Event log line always, Slack when a
-// webhook is configured. Slack failures are logged, not fatal — the log line
+// webhook is configured. Slack failures are logged, not fatal: the log line
 // has already preserved the event.
 func buildAlert(logger *slog.Logger) func(context.Context, *collector.Group) {
 	logSink := &notify.LogSink{Logger: logger}

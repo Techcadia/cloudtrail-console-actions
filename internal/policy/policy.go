@@ -1,5 +1,5 @@
 // Package policy defines the FilterPolicy document (see policy.schema.json)
-// and its YAML loader. Parsing is strict — unknown fields are rejected — and
+// and its YAML loader. Parsing is strict (unknown fields are rejected), and
 // structural validation happens here; expression and operator compilation
 // (and their errors) belong to the engine.
 package policy
@@ -219,7 +219,7 @@ func checkKeys(node *yaml.Node, allowed ...string) error {
 }
 
 // checkZeroPadded rejects unquoted numbers with a leading zero. YAML reads
-// them as numbers — octal when every digit is 0-7 — so an account ID like
+// them as numbers (octal when every digit is 0-7), so an account ID like
 // 012345670123 silently becomes 1402433619 and never matches.
 func checkZeroPadded(node *yaml.Node) error {
 	switch node.Kind {

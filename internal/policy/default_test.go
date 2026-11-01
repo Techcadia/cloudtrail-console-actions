@@ -23,8 +23,7 @@ func TestDefaultParses(t *testing.T) {
 		names = append(names, f.Name)
 	}
 
-	// Every v1 (v0.4.0) behavior must have a corresponding rule, including
-	// the ones added after the v0.2.3 policy draft.
+	// Every v1 (v0.4.0) behavior must have a corresponding rule.
 	for _, want := range []string{
 		"drop-aws-internal-invoked",
 		"drop-codecommit-all",

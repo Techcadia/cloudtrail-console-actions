@@ -4,13 +4,13 @@
 // Evaluation per record:
 //  1. preprocess fields are computed in document order into preprocess.*
 //  2. the record is dropped when any skip rule applies (match ∧ ¬exclude)
-//     and no keep rule matches — keep beats skip; the default is emit
+//     and no keep rule matches; keep beats skip, and the default is emit
 //  3. outputs project an emitted record to the log/Slack schema
 //
 // Compile front-loads every failure mode (template syntax, operator/value
 // shapes, regexes), so Evaluate is total and allocation-light. Explain runs
 // the same decision with a human-readable account of why every rule matched,
-// failed, or was carved out — the debug-logging path.
+// failed, or was carved out. This is the debug-logging path.
 package engine
 
 import (
@@ -225,7 +225,7 @@ func (e *Engine) evaluate(record map[string]any, tr *tracer) Decision {
 			matched, why := r.match.eval(scope, tr != nil)
 			if matched {
 				if tr != nil {
-					tr.logf("keep rule %q matched: %s — veto, record emitted despite %q", r.name, why, d.DroppedBy)
+					tr.logf("keep rule %q matched: %s; veto, record emitted despite %q", r.name, why, d.DroppedBy)
 				}
 				d.KeptBy = r.name
 				break

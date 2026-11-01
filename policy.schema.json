@@ -54,7 +54,7 @@
       "properties": {
         "key": {
           "type": "string",
-          "description": "A {{ }} template expression resolved against the record and preprocess.*: a dotted path with optional [n] indexing and '|| fallback', plus trimPrefix/contains/split. NOT JMESPath — see docs/policy-language.md. Invalid or unresolvable paths evaluate to null (falsy), they do not error."
+          "description": "A {{ }} template expression resolved against the record and preprocess.*: a dotted path with optional [n] indexing and '|| fallback', plus trimPrefix/contains/split. NOT JMESPath; see docs/policy-language.md. Invalid or unresolvable paths evaluate to null (falsy), they do not error."
         },
         "operator": { "$ref": "#/$defs/operator" },
         "value": {
