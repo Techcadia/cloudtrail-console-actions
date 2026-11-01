@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"strings"
@@ -143,5 +144,29 @@ func TestFetchError(t *testing.T) {
 	_, err := Fetch(context.Background(), getter, "bucket", "AWSLogs/111/CloudTrail/x.json.gz")
 	if err == nil || !strings.Contains(err.Error(), "s3://bucket/") {
 		t.Fatalf("err = %v, want s3 uri context", err)
+	}
+}
+
+// One bad record must not hide the others: an out-of-range number is kept
+// as json.Number, and only entries that are not objects are skipped.
+func TestDecodeBadRecordsAreIsolated(t *testing.T) {
+	file, err := Decode(strings.NewReader(`{"Records":[
+		{"eventName":"StopLogging"},
+		{"eventName":"PutBucketPolicy","requestParameters":{"n":1e400}},
+		null,
+		"not an object"
+	]}`))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if len(file.Records) != 2 || file.Skipped != 2 {
+		t.Fatalf("records = %d, skipped = %d; want 2 and 2", len(file.Records), file.Skipped)
+	}
+	if file.Records[0]["eventName"] != "StopLogging" {
+		t.Errorf("first record = %v", file.Records[0])
+	}
+	params := file.Records[1]["requestParameters"].(map[string]any)
+	if n, ok := params["n"].(json.Number); !ok || n.String() != "1e400" {
+		t.Errorf("out-of-range number = %#v, want json.Number 1e400", params["n"])
 	}
 }

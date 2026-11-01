@@ -155,3 +155,20 @@ func TestFlushResets(t *testing.T) {
 		t.Fatalf("alerts = %d, want 1 (second flush must be a no-op)", len(alerts))
 	}
 }
+
+func TestGroupWindowIgnoresArrivalOrder(t *testing.T) {
+	var alerts []*Group
+	c := New(func(g *Group) { alerts = append(alerts, g) }, true)
+
+	t0 := time.Date(2026, 7, 7, 12, 0, 0, 0, time.UTC)
+	c.Add(entry("jane", "PutUserPolicy", "", "e1", t0.Add(5*time.Minute)))
+	c.Add(entry("jane", "PutUserPolicy", "", "e2", t0))
+	c.Add(entry("jane", "PutUserPolicy", "", "e3", time.Time{})) // unparseable eventTime
+	c.Add(entry("jane", "PutUserPolicy", "", "e4", t0.Add(2*time.Minute)))
+	c.Flush()
+
+	g := alerts[0]
+	if !g.First.Equal(t0) || !g.Last.Equal(t0.Add(5*time.Minute)) {
+		t.Errorf("window = %v..%v, want %v..%v", g.First, g.Last, t0, t0.Add(5*time.Minute))
+	}
+}

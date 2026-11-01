@@ -6,6 +6,7 @@
 package match
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -253,6 +254,9 @@ func toNumber(v any) (float64, bool) {
 		return float64(n), true
 	case float64:
 		return n, true
+	case json.Number:
+		f, err := n.Float64()
+		return f, err == nil
 	case string:
 		// ParseFloat allocates a *NumError on every failed parse; skip it for
 		// the common non-numeric string, which backs almost every comparison.

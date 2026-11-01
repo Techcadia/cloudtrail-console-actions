@@ -116,7 +116,9 @@ func (s *Slack) Send(ctx context.Context, g *collector.Group) error {
 
 // displayName resolves the account label: SLACK_NAME_<account_id> beats
 // SLACK_NAME beats the account_id output itself. Keying on account_id (the
-// recipient account) matches v0.4.0.
+// recipient account) matches v0.4.0. Configured names are trusted mrkdwn
+// (emoji, formatting); the account_id fallback comes from the record and is
+// escaped.
 func (s *Slack) displayName(g *collector.Group) string {
 	if v, ok := s.LookupEnv("SLACK_NAME_" + outputStr(g, "account_id", "")); ok && v != "" {
 		return v
@@ -124,7 +126,7 @@ func (s *Slack) displayName(g *collector.Group) string {
 	if v, ok := s.LookupEnv("SLACK_NAME"); ok && v != "" {
 		return v
 	}
-	return outputStr(g, "account_id", "")
+	return escapeMrkdwn(outputStr(g, "account_id", ""))
 }
 
 // outputStr reads one projection field, tolerating custom policies that omit

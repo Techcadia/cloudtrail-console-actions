@@ -29,6 +29,8 @@ type Entry struct {
 type Group struct {
 	Entry
 	Count int
+	// First and Last bound the group's event times. CloudTrail does not order
+	// records within a file, so they are a running min and max.
 	First time.Time
 	Last  time.Time
 }
@@ -79,7 +81,15 @@ func (c *Collector) Add(e Entry) {
 
 	if g, ok := c.groups[k]; ok {
 		g.Count++
-		g.Last = e.Time
+		// A zero time (unparseable eventTime) never moves the window.
+		if !e.Time.IsZero() {
+			if g.First.IsZero() || e.Time.Before(g.First) {
+				g.First = e.Time
+			}
+			if e.Time.After(g.Last) {
+				g.Last = e.Time
+			}
+		}
 		// The most recent record wins wholesale (record, outputs, event ID and
 		// source file), so a group's fields always describe one record.
 		g.Entry = e

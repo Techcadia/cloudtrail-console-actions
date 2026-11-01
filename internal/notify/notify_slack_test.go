@@ -260,6 +260,34 @@ func TestSlackEscapesMrkdwn(t *testing.T) {
 	}
 }
 
+// The account_id fallback is record data, so it is escaped like the rest;
+// a configured SLACK_NAME is trusted and keeps its mrkdwn.
+func TestSlackEscapesAccountFallback(t *testing.T) {
+	srv, bodies := slackServer(t, "ok")
+	s := &Slack{
+		WebhookURL: srv.URL,
+		HTTPClient: srv.Client(),
+		LookupEnv:  func(string) (string, bool) { return "", false },
+	}
+	g := group(1)
+	g.Outputs["account_id"] = "<!channel> <https://evil.example|Re-authenticate>"
+	if err := s.Send(context.Background(), g); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	text := decodePayload(t, (*bodies)[0])["text"].(string)
+	if strings.Contains(text, "<!channel>") || !strings.Contains(text, "&lt;!channel&gt;") {
+		t.Errorf("account_id fallback not escaped: %q", text)
+	}
+
+	s.LookupEnv = func(k string) (string, bool) { return ":lock: <!here>", k == "SLACK_NAME" }
+	if err := s.Send(context.Background(), g); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if text := decodePayload(t, (*bodies)[1])["text"].(string); !strings.Contains(text, ":lock: <!here>") {
+		t.Errorf("configured SLACK_NAME must stay raw: %q", text)
+	}
+}
+
 // Same day-of-month in different months is not the same day.
 func TestSlackTimeWindowAcrossMonths(t *testing.T) {
 	srv, bodies := slackServer(t, "ok")

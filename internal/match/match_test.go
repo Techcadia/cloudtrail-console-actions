@@ -1,6 +1,9 @@
 package match
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func mustCompile(t *testing.T, op Operator, value any) *Comparison {
 	t.Helper()
@@ -29,6 +32,7 @@ func TestEquals(t *testing.T) {
 		{"nil key does not equal empty string", Equals, "", nil, false},
 		{"int value vs json float64 key", Equals, 32, float64(32), true},
 		{"number vs numeric string", Equals, 32, "32", true},
+		{"number vs json.Number", Equals, 32, json.Number("32"), true},
 		{"strings compare exactly, not numerically", Equals, "1", "1.0", false},
 		{"zero-padded strings stay distinct", Equals, "012345678901", "12345678901", false},
 		{"identical numeric strings", Equals, "012345678901", "012345678901", true},

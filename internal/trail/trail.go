@@ -4,6 +4,7 @@ package trail
 
 import (
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"encoding/json"
@@ -23,7 +24,11 @@ var ErrMalformed = errors.New("malformed log file")
 
 // File is a decoded CloudTrail log file.
 type File struct {
-	Records []map[string]any `json:"Records"`
+	Records []map[string]any
+	// Skipped counts entries in the Records array that could not be decoded
+	// as a JSON object (including null). The rest of the file is still
+	// processed.
+	Skipped int
 }
 
 // ObjectGetter is the slice of the S3 client the fetcher needs; satisfied by
@@ -93,14 +98,45 @@ func Decode(r io.Reader) (*File, error) {
 		body = gz
 	}
 
-	var file File
-	if err := json.NewDecoder(body).Decode(&file); err != nil {
+	// Records are decoded one at a time so a single bad record cannot take
+	// the rest of the file down with it.
+	var doc struct {
+		Records []json.RawMessage `json:"Records"`
+	}
+	if err := json.NewDecoder(body).Decode(&doc); err != nil {
 		if src.err != nil {
 			return nil, fmt.Errorf("reading log file: %w", src.err)
 		}
 		return nil, fmt.Errorf("decoding CloudTrail log file: %w: %w", ErrMalformed, err)
 	}
-	return &file, nil
+
+	file := &File{Records: make([]map[string]any, 0, len(doc.Records))}
+	for _, raw := range doc.Records {
+		if record := decodeRecord(raw); record != nil {
+			file.Records = append(file.Records, record)
+		} else {
+			file.Skipped++
+		}
+	}
+	return file, nil
+}
+
+// decodeRecord decodes one CloudTrail record, or returns nil when it is not
+// a JSON object. Numbers default to float64; a record holding a number
+// outside float64 range is decoded again with json.Number instead of being
+// dropped.
+func decodeRecord(raw json.RawMessage) map[string]any {
+	var record map[string]any
+	if err := json.Unmarshal(raw, &record); err == nil {
+		return record
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	record = nil
+	if err := dec.Decode(&record); err != nil {
+		return nil
+	}
+	return record
 }
 
 // readErrRecorder remembers the first non-EOF error from the underlying

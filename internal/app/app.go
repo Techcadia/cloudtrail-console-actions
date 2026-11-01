@@ -51,7 +51,7 @@ func (a *App) processObject(ctx context.Context, src event.Record, col *collecto
 		// invocation, because async retries would reprocess it forever. Log and skip;
 		// only genuine fetch errors (S3/network) propagate.
 		if errors.Is(err, trail.ErrMalformed) {
-			a.Logger.LogAttrs(ctx, slog.LevelWarn, "skipping unparseable object",
+			a.Logger.LogAttrs(ctx, slog.LevelError, "skipping unparseable object",
 				slog.String("bucket", bucket), slog.String("key", key),
 				slog.String("error", err.Error()))
 			return nil
@@ -60,6 +60,11 @@ func (a *App) processObject(ctx context.Context, src event.Record, col *collecto
 	}
 	if file == nil { // housekeeping object (digest/config)
 		return nil
+	}
+	if file.Skipped > 0 {
+		a.Logger.LogAttrs(ctx, slog.LevelError, "skipping undecodable records",
+			slog.String("bucket", bucket), slog.String("key", key),
+			slog.Int("skipped", file.Skipped))
 	}
 
 	debug := a.Logger.Enabled(ctx, slog.LevelDebug)
